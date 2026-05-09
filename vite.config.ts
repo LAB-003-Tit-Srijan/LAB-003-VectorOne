@@ -12,4 +12,14 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    outDir: 'dist',
+    // Exclude server from the build
+    rollupOptions: {
+      external: ['server/*'],
+    },
+  },
+  optimizeDeps: {
+    exclude: ['server'],
+  },
 })

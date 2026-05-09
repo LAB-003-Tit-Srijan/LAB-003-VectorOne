@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { FileText, Clock, AlertCircle, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -19,6 +19,7 @@ interface TranscriptProps {
 export function Transcript({ transcriptData, currentTime, onSeek, isLoading, error }: TranscriptProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeItemRef = useRef<HTMLDivElement>(null);
+  const previousActiveIndexRef = useRef<number>(-1);
 
   // Format seconds to MM:SS
   const formatTime = (seconds: number) => {
@@ -27,15 +28,26 @@ export function Transcript({ transcriptData, currentTime, onSeek, isLoading, err
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Auto-scroll to active item
+  const activeIndex = useMemo(
+    () =>
+      transcriptData.findIndex(
+        (item) => currentTime >= item.offset && currentTime < item.offset + item.duration
+      ),
+    [transcriptData, currentTime]
+  );
+
+  // Auto-scroll only when active line changes to avoid jitter.
   useEffect(() => {
+    if (activeIndex === previousActiveIndexRef.current) return;
+    previousActiveIndexRef.current = activeIndex;
+
     if (activeItemRef.current && containerRef.current) {
       activeItemRef.current.scrollIntoView({
         behavior: 'smooth',
         block: 'center',
       });
     }
-  }, [currentTime]);
+  }, [activeIndex]);
 
   return (
     <div className="glass-panel w-full rounded-2xl flex flex-col overflow-hidden">
@@ -73,17 +85,19 @@ export function Transcript({ transcriptData, currentTime, onSeek, isLoading, err
         )}
 
         {!isLoading && !error && transcriptData.map((item, idx) => {
-          const isActive = currentTime >= item.offset && currentTime < item.offset + item.duration;
+          const isActive = idx === activeIndex;
           
           return (
             <motion.div 
               whileHover={{ x: 4 }}
+              animate={isActive ? { x: 2, scale: 1.01 } : { x: 0, scale: 1 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
               key={idx}
               ref={isActive ? activeItemRef : null}
               onClick={() => onSeek(item.offset)}
-              className={`flex gap-4 p-3 rounded-xl cursor-pointer transition-colors duration-200 ${
+              className={`flex gap-4 p-3 rounded-xl cursor-pointer transition-all duration-200 ${
                 isActive 
-                  ? 'bg-indigo-500/10 border border-indigo-500/20' 
+                  ? 'bg-indigo-500/15 border border-indigo-400/40 shadow-[0_0_0_1px_rgba(99,102,241,0.2)]' 
                   : 'hover:bg-slate-800/50 border border-transparent'
               }`}
             >
