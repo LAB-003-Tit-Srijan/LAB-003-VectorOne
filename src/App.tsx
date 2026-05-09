@@ -52,11 +52,23 @@ function normalizeTranscriptUnits(
 }
 
 function App() {
+  const [sessionId] = useState(() => {
+    if (typeof window === 'undefined') return `session-${Date.now()}`;
+    const existing = window.sessionStorage.getItem('lms-ai-session-id');
+    if (existing) return existing;
+    const generated =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `session-${Date.now()}`;
+    window.sessionStorage.setItem('lms-ai-session-id', generated);
+    return generated;
+  });
   const [learningMode, setLearningMode] = useState('Beginner');
   
   // Video Player State
   const [inputUrl, setInputUrl] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
+  const [videoId, setVideoId] = useState('');
   const [currentTime, setCurrentTime] = useState(0);
   const [seekRequest, setSeekRequest] = useState<number | null>(null);
 
@@ -80,6 +92,7 @@ function App() {
       // Normalise to a canonical YouTube URL so the player can always resolve it.
       const normalizedVideoUrl = `https://www.youtube.com/watch?v=${videoId}`;
       setVideoUrl(normalizedVideoUrl);
+      setVideoId(videoId);
       fetchTranscript(videoId);
     }
   };
@@ -120,7 +133,20 @@ function App() {
 
   const handleSeek = useCallback((time: number) => {
     setSeekRequest(time);
-  }, []);
+    if (!videoId) return;
+    fetch('/api/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId,
+        videoId,
+        eventType: 'replay',
+        timestamp: time,
+      }),
+    }).catch(() => {
+      // Keep seek interaction resilient even if analytics tracking fails.
+    });
+  }, [sessionId, videoId]);
 
   const handleProgress = useCallback((state: { playedSeconds: number }) => {
     setCurrentTime(state.playedSeconds);
@@ -208,11 +234,16 @@ function App() {
           {/* Right Column - Chat & Insights */}
           <div className="lg:col-span-4 flex flex-col gap-6 lg:h-full">
             <div className="flex-1 min-h-[500px] lg:min-h-0">
-              <AIChat />
+              <AIChat
+                videoId={videoId}
+                sessionId={sessionId}
+                transcriptData={transcriptData}
+                onSeek={handleSeek}
+              />
             </div>
             
             <div className="flex-none h-[400px] lg:h-[40%] lg:min-h-[300px]">
-              <LearningInsights />
+              <LearningInsights sessionId={sessionId} videoId={videoId} />
             </div>
           </div>
 
