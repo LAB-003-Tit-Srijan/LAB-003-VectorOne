@@ -1,9 +1,9 @@
-import ReactPlayer from 'react-player';
+import ReactPlayer, { type OnProgressProps } from 'react-player';
 import { Play } from 'lucide-react';
 
 interface VideoPlayerProps {
   url: string;
-  onProgress: (state: { playedSeconds: number }) => void;
+  onProgress: (state: OnProgressProps) => void;
   playerRef: React.RefObject<any>;
 }
 
@@ -38,11 +38,12 @@ export function VideoPlayer({ url, onProgress, playerRef }: VideoPlayerProps) {
               youtube: {
                 playerVars: { modestbranding: 1, rel: 0 },
               },
-            }}
+            } as any}
           />
         </div>
       )}
     </div>
   );
 }
+
 

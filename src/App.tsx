@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import type { OnProgressProps } from 'react-player';
 
 import { VideoPlayer } from './components/VideoPlayer';
 import { AIChat } from './components/AIChat';
@@ -94,7 +95,7 @@ function App() {
     }
   };
 
-  const handleProgress = (state: { playedSeconds: number }) => {
+  const handleProgress = (state: OnProgressProps) => {
     setCurrentTime(state.playedSeconds);
   };
 
