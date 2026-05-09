@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { InsightsResponse, TimelineItem } from '../types/insights';
+import { captureClientException } from '../lib/monitoring';
 
 export function useLearningData(sessionId: string, videoId: string, pollMs = 5000) {
   const [insights, setInsights] = useState<InsightsResponse | null>(null);
@@ -44,6 +45,7 @@ export function useLearningData(sessionId: string, videoId: string, pollMs = 500
       } catch (err: unknown) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load learning data.');
+          captureClientException(err, { scope: 'useLearningData', sessionId, videoId });
         }
       } finally {
         if (!cancelled) setIsLoading(false);

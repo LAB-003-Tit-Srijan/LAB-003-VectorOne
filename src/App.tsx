@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { Sentry } from './instrument';
 import { LMSProvider } from './context/LMSContext';
 import { AppLayout } from './layouts/AppLayout';
 import { LandingPage } from './pages/LandingPage';
@@ -9,7 +10,7 @@ import { RevisionPage } from './pages/RevisionPage';
 import { RoadmapPage } from './pages/RoadmapPage';
 import { SettingsPage } from './pages/SettingsPage';
 
-export default function App() {
+function AppRoutes() {
   return (
     <BrowserRouter>
       <LMSProvider>
@@ -28,4 +29,29 @@ export default function App() {
       </LMSProvider>
     </BrowserRouter>
   );
+}
+
+function ErrorFallback() {
+  return (
+    <div
+      className="min-h-[50vh] flex flex-col items-center justify-center px-6 text-center"
+      style={{ color: 'var(--text-main)' }}
+    >
+      <p className="text-sm font-medium mb-1">Something went wrong</p>
+      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+        Refresh the page or try again in a moment.
+      </p>
+    </div>
+  );
+}
+
+export default function App() {
+  if (import.meta.env.VITE_SENTRY_DSN) {
+    return (
+      <Sentry.ErrorBoundary fallback={<ErrorFallback />} showDialog={false}>
+        <AppRoutes />
+      </Sentry.ErrorBoundary>
+    );
+  }
+  return <AppRoutes />;
 }

@@ -13,6 +13,7 @@ import { extractVideoId, normalizeTranscriptUnits } from '../lib/youtube';
 import { readRecentLectures, recordRecentLecture, type RecentLecture } from '../lib/recentLectures';
 import type { InsightsResponse, TimelineItem } from '../types/insights';
 import { DEFAULT_AI_PREFERENCES, type AiPreferences } from '../types/lms';
+import { captureClientException } from '../lib/monitoring';
 
 type Theme = 'light' | 'dark';
 
@@ -46,8 +47,6 @@ interface LMSContextValue {
   queueQuickAction: (text: string) => void;
   consumePendingQuestion: () => void;
   recentLectures: RecentLecture[];
-  commandCenterOpen: boolean;
-  setCommandCenterOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const LMSContext = createContext<LMSContextValue | null>(null);
@@ -102,8 +101,6 @@ export function LMSProvider({ children }: { children: ReactNode }) {
     token: number;
     text: string;
   } | null>(null);
-  const [commandCenterOpen, setCommandCenterOpen] = useState(false);
-
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     window.localStorage.setItem('lms-theme', theme);
@@ -139,6 +136,7 @@ export function LMSProvider({ children }: { children: ReactNode }) {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('[fetchTranscript]', message);
+      captureClientException(err, { scope: 'fetchTranscript', videoId: vid });
       setTranscriptError(message);
     } finally {
       setIsTranscriptLoading(false);
@@ -205,7 +203,6 @@ export function LMSProvider({ children }: { children: ReactNode }) {
 
   const queueQuickAction = useCallback((text: string) => {
     setPendingChatQuestion({ token: Date.now(), text });
-    setCommandCenterOpen(false);
   }, []);
 
   const value = useMemo<LMSContextValue>(
@@ -239,8 +236,6 @@ export function LMSProvider({ children }: { children: ReactNode }) {
       queueQuickAction,
       consumePendingQuestion,
       recentLectures,
-      commandCenterOpen,
-      setCommandCenterOpen,
     }),
     [
       sessionId,
@@ -268,7 +263,6 @@ export function LMSProvider({ children }: { children: ReactNode }) {
       queueQuickAction,
       consumePendingQuestion,
       recentLectures,
-      commandCenterOpen,
     ]
   );
 

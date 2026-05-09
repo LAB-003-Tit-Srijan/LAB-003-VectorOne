@@ -1,14 +1,11 @@
+import { useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowRight, Clock3, PlayCircle, Target, TrendingUp, Zap } from 'lucide-react';
+import { ArrowRight, Clock3, PlayCircle, Sparkles, Target } from 'lucide-react';
 import { useLMS } from '../context/LMSContext';
-
-function formatTime(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
-  return `${m}:${rem.toString().padStart(2, '0')}`;
-}
+import { buildAiInsightLine, formatInsightTime, formatRelativeActivity } from '../lib/insightBrief';
+import { buildSmartChapters } from '../lib/smartChapters';
+import { dashboardQuickPrompts } from '../lib/quickPrompts';
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -17,178 +14,230 @@ export function DashboardPage() {
     insights,
     learningDataLoading,
     videoId,
+    transcriptData,
     loadLectureById,
+    timeline,
+    learningMode,
+    queueQuickAction,
+    inputUrl,
+    setInputUrl,
+    submitLectureUrl,
   } = useLMS();
 
-  const retention = insights?.summary.retentionScore ?? null;
-  const confusion = insights?.summary.confusionLevel ?? '—';
-  const weak = insights?.weakTopics ?? [];
+  const videoReady = Boolean(videoId && transcriptData.length > 0);
+  const insightLine = useMemo(() => buildAiInsightLine(insights, videoReady), [insights, videoReady]);
+  const chapters = useMemo(() => (videoReady ? buildSmartChapters(transcriptData) : []), [videoReady, transcriptData]);
+  const quickPrompts = useMemo(() => dashboardQuickPrompts(learningMode), [learningMode]);
+
+  const onQuick = (prompt: string) => {
+    queueQuickAction(prompt);
+    navigate('/learn');
+  };
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold font-['Manrope'] tracking-tight mb-1">Dashboard</h1>
+    <div className="max-w-3xl mx-auto space-y-10">
+      <header className="space-y-1">
+        <h1 className="text-2xl font-semibold font-['Manrope'] tracking-tight">Dashboard</h1>
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-          Your lectures, progress signals, and next steps in one view.
+          Resume lectures, scan signals, jump back into focus.
         </p>
-      </div>
+      </header>
 
-      <div className="grid md:grid-cols-3 gap-4">
-        {[
-          {
-            label: 'Retention',
-            value: retention != null ? `${retention}%` : videoId ? '—' : 'Open a lecture',
-            icon: TrendingUp,
-            hint: 'Based on your latest session signals.',
-          },
-          {
-            label: 'Confusion',
-            value: videoId ? confusion : '—',
-            icon: Zap,
-            hint: 'Aggregates repeats & fallbacks.',
-          },
-          {
-            label: 'Active lecture',
-            value: videoId ? videoId.slice(0, 8) + '…' : 'None',
-            icon: PlayCircle,
-            hint: 'Load or resume from Learn.',
-          },
-        ].map((card, i) => {
-          const Icon = card.icon;
-          return (
-            <motion.div
-              key={card.label}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05 }}
-              className="rounded-2xl border p-5"
-              style={{ borderColor: 'var(--surface-border)', background: 'var(--surface-muted)' }}
-            >
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>
-                <Icon className="w-3.5 h-3.5" />
-                {card.label}
-              </div>
-              <div className="text-2xl font-bold mb-1">{card.value}</div>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{card.hint}</p>
-            </motion.div>
-          );
-        })}
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-6">
+      <section className="space-y-3">
+        <h2 className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+          Add lecture
+        </h2>
         <div
-          className="rounded-3xl border p-5 sm:p-6"
+          className="rounded-2xl border px-3 py-2.5 flex gap-2"
           style={{ borderColor: 'var(--surface-border)', background: 'var(--surface-muted)' }}
         >
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-sm">Recent lectures</h2>
-            <Link
-              to="/learn"
-              className="text-xs font-semibold text-indigo-400 inline-flex items-center gap-1 hover:underline"
-            >
-              Open Learn
-              <ArrowRight className="w-3 h-3" />
-            </Link>
+          <input
+            type="text"
+            value={inputUrl}
+            onChange={(e) => setInputUrl(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && submitLectureUrl()}
+            placeholder="YouTube URL or ID"
+            className="flex-1 min-w-0 bg-transparent text-sm outline-none"
+            style={{ color: 'var(--text-main)' }}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              submitLectureUrl();
+              navigate('/learn');
+            }}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg premium-button text-white shrink-0"
+          >
+            Open
+          </button>
+        </div>
+      </section>
+
+      {videoId && (
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="text-sm leading-relaxed pl-3 border-l-2 border-amber-500/40"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          {insightLine}
+        </motion.p>
+      )}
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+            Recent
+          </h2>
+          <Link to="/learn" className="text-xs font-medium hover:opacity-80" style={{ color: 'var(--text-muted)' }}>
+            Learn →
+          </Link>
+        </div>
+        {recentLectures.length === 0 ? (
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            No lectures yet. Add a URL above.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {recentLectures.slice(0, 8).map((lec) => (
+              <li key={lec.videoId}>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await loadLectureById(lec.url);
+                    navigate('/learn');
+                  }}
+                  className="w-full flex items-center gap-3 rounded-2xl border px-3 py-3 text-left transition-opacity hover:opacity-90"
+                  style={{ borderColor: 'var(--surface-border)', background: 'var(--surface-card)' }}
+                >
+                  <PlayCircle className="w-4 h-4 shrink-0 opacity-70" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm truncate">{lec.title}</div>
+                    <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      {new Date(lec.lastOpenedAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 shrink-0 opacity-30" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {videoReady && chapters.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+            Chapters
+          </h2>
+          <ul className="space-y-1">
+            {chapters.slice(0, 8).map((ch, i) => (
+              <li key={`${ch.start}-${i}`}>
+                <Link
+                  to={`/learn?v=${encodeURIComponent(videoId)}&t=${encodeURIComponent(String(Math.floor(ch.start)))}`}
+                  className="flex items-center gap-3 py-2 text-sm rounded-lg px-2 -mx-2 hover:bg-black/[0.03] dark:hover:bg-white/[0.04]"
+                >
+                  <span className="text-[11px] font-mono tabular-nums w-12 shrink-0 opacity-60">
+                    {formatInsightTime(ch.start)}
+                  </span>
+                  <span className="truncate">{ch.title}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {videoId && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+              Activity
+            </h2>
+            {learningDataLoading && <span className="text-[10px] opacity-60">sync</span>}
           </div>
-          {recentLectures.length === 0 ? (
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              No lectures yet. Paste a YouTube URL on the Learn page to start.
-            </p>
+          {timeline.length === 0 ? (
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Questions and seeks will appear here.</p>
           ) : (
             <ul className="space-y-2">
-              {recentLectures.slice(0, 6).map((lec) => (
-                <li key={lec.videoId}>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await loadLectureById(lec.url);
-                      navigate('/learn');
-                    }}
-                    className="w-full flex items-center gap-3 rounded-2xl border px-3 py-3 text-left transition-colors hover:bg-white/5"
-                    style={{ borderColor: 'var(--surface-border)', background: 'var(--surface-card)' }}
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-indigo-500/15 flex items-center justify-center text-indigo-400 shrink-0">
-                      <PlayCircle className="w-4 h-4" />
+              {timeline.slice(0, 6).map((item, i) => (
+                <li key={`${item.at}-${i}`} className="flex gap-3 text-sm">
+                  <Clock3 className="w-4 h-4 shrink-0 mt-0.5 opacity-40" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="capitalize text-xs font-medium">{item.type}</span>
+                      <span className="text-[10px] opacity-50">{formatRelativeActivity(item.at)}</span>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium truncate">{lec.title}</div>
-                      <div className="text-[11px] flex items-center gap-1 mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                        <Clock3 className="w-3 h-3" />
-                        {new Date(lec.lastOpenedAt).toLocaleString()}
-                      </div>
-                    </div>
-                    <ArrowRight className="w-4 h-4 shrink-0 opacity-40" />
-                  </button>
+                    <p className="text-xs mt-0.5 line-clamp-2" style={{ color: 'var(--text-muted)' }}>
+                      {item.label}
+                    </p>
+                  </div>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </section>
+      )}
 
-        <div
-          className="rounded-3xl border p-5 sm:p-6"
-          style={{ borderColor: 'var(--surface-border)', background: 'var(--surface-muted)' }}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-sm">Weak topics &amp; hotspots</h2>
-            {learningDataLoading && (
-              <span className="text-[10px] animate-pulse" style={{ color: 'var(--text-muted)' }}>Updating…</span>
+      {videoReady && (
+        <section className="space-y-3">
+          <h2 className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+            Ask in chat
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {quickPrompts.map((q) => (
+              <button
+                key={q.id}
+                type="button"
+                onClick={() => onQuick(q.prompt)}
+                className="text-xs font-medium px-3 py-2 rounded-xl border transition-opacity hover:opacity-85"
+                style={{ borderColor: 'var(--surface-border)', background: 'var(--surface-muted)' }}
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+            Signals
+          </h2>
+          <Link to="/analytics" className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+            Analytics →
+          </Link>
+        </div>
+        {!videoId ? (
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Load a lecture to see weak topics.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {(insights?.weakTopics ?? []).length === 0 ? (
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>No weak-topic signal yet.</span>
+            ) : (
+              (insights?.weakTopics ?? []).slice(0, 5).map((w) => (
+                <span
+                  key={w.topic}
+                  className="text-xs px-2.5 py-1 rounded-lg border inline-flex items-center gap-1"
+                  style={{ borderColor: 'var(--surface-border)' }}
+                >
+                  <Target className="w-3 h-3 opacity-50" />
+                  {w.topic}
+                </span>
+              ))
             )}
           </div>
-          {!videoId ? (
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              Load a lecture to populate insights for this session.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <div className="text-xs font-medium uppercase tracking-wider mb-2 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
-                  <Target className="w-3 h-3" /> Weak topics
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {weak.length === 0 ? (
-                    <span className="text-sm" style={{ color: 'var(--text-muted)' }}>No weak signals yet — keep asking questions.</span>
-                  ) : (
-                    weak.map((w) => (
-                      <span
-                        key={w.topic}
-                        className="text-xs px-2.5 py-1 rounded-lg border"
-                        style={{ borderColor: 'var(--surface-border)', background: 'var(--surface-card)' }}
-                      >
-                        {w.topic}{' '}
-                        <span className="opacity-60">({Math.round(w.struggleRate * 100)}%)</span>
-                      </span>
-                    ))
-                  )}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
-                  Replay-heavy segments
-                </div>
-                <ul className="space-y-1.5 text-sm">
-                  {(insights?.replayHotspots ?? []).slice(0, 4).map((h) => (
-                    <li key={h.timestamp} className="flex justify-between gap-2" style={{ color: 'var(--text-muted)' }}>
-                      <span>{formatTime(h.timestamp)}</span>
-                      <span className="tabular-nums">{h.count}×</span>
-                    </li>
-                  ))}
-                  {(insights?.replayHotspots?.length ?? 0) === 0 && (
-                    <li className="text-sm" style={{ color: 'var(--text-muted)' }}>Replays will appear after seeks.</li>
-                  )}
-                </ul>
-              </div>
-              <Link
-                to="/analytics"
-                className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-400 hover:underline"
-              >
-                Full analytics
-                <ArrowRight className="w-3 h-3" />
-              </Link>
-            </div>
-          )}
-        </div>
-      </div>
+        )}
+      </section>
+
+      <section className="rounded-2xl border p-4 flex items-start gap-3" style={{ borderColor: 'var(--surface-border)', background: 'var(--surface-muted)' }}>
+        <Sparkles className="w-4 h-4 shrink-0 mt-0.5 opacity-60" />
+        <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          Study mode and AI preferences live in <Link to="/settings" className="underline font-medium">Settings</Link>.
+          Structured revision tools are on <Link to="/revision" className="underline font-medium">Revision</Link>.
+        </p>
+      </section>
     </div>
   );
 }
