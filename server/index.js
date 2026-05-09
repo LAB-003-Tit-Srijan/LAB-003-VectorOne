@@ -12,6 +12,12 @@ const PORT = process.env.PORT || 3001;
 const NIM_API_KEY = process.env.NIM_API_KEY ?? process.env.NVIDIA_NIM_API_KEY;
 const NIM_BASE_URL = process.env.NIM_BASE_URL ?? 'https://integrate.api.nvidia.com/v1';
 const EMBEDDING_MODEL = process.env.NIM_EMBEDDING_MODEL ?? 'nvidia/nv-embedqa-e5-v5';
+const EMBEDDING_FALLBACK_MODELS = (
+  process.env.NIM_EMBEDDING_FALLBACK_MODELS ?? 'nvidia/nv-embed-v1'
+)
+  .split(',')
+  .map((model) => model.trim())
+  .filter(Boolean);
 const GENERATION_MODEL =
   process.env.NIM_GENERATION_MODEL ?? 'meta/llama-3.1-70b-instruct';
 const FALLBACK_ANSWER = 'This topic is not covered in the lecture.';
@@ -23,12 +29,13 @@ const VISION_MODEL =
   process.env.NIM_VISION_MODEL ?? 'meta/llama-3.2-11b-vision-instruct';
 const FRAME_INTERVAL_SECONDS = Number(process.env.FRAME_INTERVAL_SECONDS ?? 25);
 const MAX_FRAMES = Number(process.env.MAX_VISUAL_FRAMES ?? 8);
-const VISUAL_CONTEXT_TIMEOUT_MS = Number(process.env.VISUAL_CONTEXT_TIMEOUT_MS ?? 8000);
+const VISUAL_CONTEXT_TIMEOUT_MS = Number(process.env.VISUAL_CONTEXT_TIMEOUT_MS ?? 1200);
 const ragStore = new Map();
 const sessionStore = new Map();
 const visualStore = new Map();
 const analyticsStore = new Map();
 const execFileAsync = promisify(execFile);
+const embeddingStrategyCache = new Map();
 
 app.use(cors());
 app.use(express.json());
@@ -182,10 +189,24 @@ function getAnalytics(sessionId, videoId) {
       quizMistakes: 0,
       topicStats: new Map(),
       replayBuckets: new Map(),
+      confusionBuckets: new Map(),
       recentReplayBuckets: [],
+      activityFeed: [],
     });
   }
   return analyticsStore.get(key);
+}
+
+function appendActivity(sessionId, videoId, entry) {
+  const analytics = getAnalytics(sessionId, videoId);
+  if (!Array.isArray(analytics.activityFeed)) {
+    analytics.activityFeed = [];
+  }
+  analytics.activityFeed.push({
+    ...entry,
+    at: entry.at ?? Date.now(),
+  });
+  analytics.activityFeed = analytics.activityFeed.slice(-80);
 }
 
 function extractTopicTokens(text, limit = 3) {
@@ -218,9 +239,15 @@ function extractTopicTokens(text, limit = 3) {
 
 function trackReplay(sessionId, videoId, timestampSeconds) {
   const analytics = getAnalytics(sessionId, videoId);
-  const bucket = Math.floor(Math.max(0, Number(timestampSeconds) || 0) / 10) * 10;
+  const sec = Math.max(0, Number(timestampSeconds) || 0);
+  const bucket = Math.floor(sec / 10) * 10;
   analytics.replayBuckets.set(bucket, (analytics.replayBuckets.get(bucket) ?? 0) + 1);
   analytics.recentReplayBuckets = [...analytics.recentReplayBuckets, bucket].slice(-20);
+  appendActivity(sessionId, videoId, {
+    type: 'replay',
+    label: `Replay at ${formatTimestamp(sec)}`,
+    second: Math.floor(sec),
+  });
 }
 
 function trackQuizMistake(sessionId, videoId, topic = 'general') {
@@ -238,6 +265,14 @@ function trackQuestionOutcome(sessionId, videoId, question, answer, signals) {
   if (answer === FALLBACK_ANSWER) analytics.fallbackAnswers += 1;
   if (signals.repeated) analytics.repeatedQuestions += 1;
   if (signals.confusing) analytics.confusionSignals += 1;
+
+  if ((signals.confusing || answer === FALLBACK_ANSWER) && analytics.recentReplayBuckets.length > 0) {
+    const lastReplayBucket = analytics.recentReplayBuckets[analytics.recentReplayBuckets.length - 1];
+    analytics.confusionBuckets.set(
+      lastReplayBucket,
+      (analytics.confusionBuckets.get(lastReplayBucket) ?? 0) + 1
+    );
+  }
 
   const topics = extractTopicTokens(question);
   for (const topic of topics) {
@@ -269,15 +304,38 @@ function computeLearnerInsights(sessionId, videoId) {
     .sort((a, b) => b.count - a.count)
     .slice(0, 4);
 
+  const confusionHeatmap = Array.from(analytics.confusionBuckets.entries())
+    .map(([bucket, count]) => ({ timestamp: bucket, intensity: count }))
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  const mostAskedConcepts = topicEntries
+    .slice()
+    .sort((a, b) => b.mentions - a.mentions)
+    .slice(0, 5)
+    .map((entry) => ({
+      concept: entry.topic,
+      mentions: entry.mentions,
+      struggleRate: Number(entry.difficulty.toFixed(2)),
+    }));
+
   const confusionScoreRaw =
     analytics.confusionSignals + analytics.repeatedQuestions + analytics.fallbackAnswers;
   const confusionScore = Math.min(100, confusionScoreRaw * 8);
   const confusionLevel =
     confusionScore >= 70 ? 'High' : confusionScore >= 35 ? 'Medium' : 'Low';
 
+  const retentionPenalty =
+    analytics.fallbackAnswers * 12 +
+    analytics.repeatedQuestions * 6 +
+    analytics.confusionSignals * 7 +
+    analytics.quizMistakes * 8;
+  const retentionScore = Math.max(0, Math.min(100, 100 - retentionPenalty));
+
   return {
     weakTopics,
     replayHotspots,
+    confusionHeatmap,
+    mostAskedConcepts,
     summary: {
       totalQuestions: analytics.totalQuestions,
       repeatedQuestions: analytics.repeatedQuestions,
@@ -286,6 +344,7 @@ function computeLearnerInsights(sessionId, videoId) {
       quizMistakes: analytics.quizMistakes,
       confusionLevel,
       confusionScore,
+      retentionScore,
       fallbackRate:
         analytics.totalQuestions === 0
           ? 0
@@ -311,6 +370,11 @@ function saveSessionTurn(sessionId, videoId, question, answer) {
     },
   ].slice(-MAX_MEMORY_TURNS);
   sessionStore.set(key, next);
+  const q = String(question ?? '').trim();
+  appendActivity(sessionId, videoId, {
+    type: 'question',
+    label: q.length > 120 ? `${q.slice(0, 117)}…` : q,
+  });
 }
 
 function detectMemorySignals(question, history) {
@@ -374,7 +438,9 @@ async function parseJsonSafe(response) {
 function extractApiError(data, fallback) {
   if (typeof data?.error?.message === 'string') return data.error.message;
   if (typeof data?.message === 'string') return data.message;
+  if (typeof data?.detail === 'string') return data.detail;
   if (typeof data?.raw === 'string') return data.raw.slice(0, 400);
+  if (data && typeof data === 'object') return JSON.stringify(data).slice(0, 500);
   return fallback;
 }
 
@@ -384,6 +450,13 @@ function isPersonIdentityQuestion(question) {
     /\bwho is (she|he|this person|that person)\b/.test(q) ||
     /\btell me about (her|him|this person|that person)\b/.test(q) ||
     /\bwho is in (the )?video\b/.test(q)
+  );
+}
+
+function isVisualQuestion(question) {
+  const q = String(question ?? '').toLowerCase();
+  return /\b(diagram|shown|show|screen|slide|image|visual|figure|chart|graph|seen|looks like)\b/.test(
+    q
   );
 }
 
@@ -615,7 +688,7 @@ function getVisualContext(videoId) {
   return current.chunks ?? [];
 }
 
-async function embedText(text, inputType) {
+async function requestEmbedding(model, payload) {
   const res = await fetch(`${NIM_BASE_URL}/embeddings`, {
     method: 'POST',
     headers: {
@@ -623,24 +696,60 @@ async function embedText(text, inputType) {
       Authorization: `Bearer ${NIM_API_KEY}`,
     },
     body: JSON.stringify({
-      model: EMBEDDING_MODEL,
-      input: [text],
-      input_type: inputType,
-      encoding_format: 'float',
+      model,
+      ...payload,
     }),
   });
 
   const data = await parseJsonSafe(res);
   if (!res.ok) {
     const reason = extractApiError(data, 'NIM embedding request failed.');
-    throw new Error(`NIM embedding request failed (${res.status}): ${reason}`);
+    throw new Error(`[model=${model}] (${res.status}) ${reason}`);
   }
 
   const vector = data?.data?.[0]?.embedding;
   if (!Array.isArray(vector) || vector.length === 0) {
-    throw new Error('Embedding API returned an empty vector.');
+    throw new Error(`[model=${model}] Embedding API returned an empty vector.`);
   }
   return vector;
+}
+
+async function embedText(text, inputType) {
+  const models = [EMBEDDING_MODEL, ...EMBEDDING_FALLBACK_MODELS].filter(
+    (model, idx, arr) => arr.indexOf(model) === idx
+  );
+  const payloadVariants = [
+    { input: [text], input_type: inputType, encoding_format: 'float' },
+    { input: [text], encoding_format: 'float' },
+    { input: text, encoding_format: 'float' },
+  ];
+
+  const strategyKey = `inputType:${inputType}`;
+  const cached = embeddingStrategyCache.get(strategyKey);
+  if (cached) {
+    try {
+      return await requestEmbedding(cached.model, cached.payload);
+    } catch {
+      embeddingStrategyCache.delete(strategyKey);
+    }
+  }
+
+  const errors = [];
+  for (const model of models) {
+    for (let idx = 0; idx < payloadVariants.length; idx += 1) {
+      const payload = payloadVariants[idx];
+      try {
+        const vector = await requestEmbedding(model, payload);
+        embeddingStrategyCache.set(strategyKey, { model, payload });
+        return vector;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push(message);
+      }
+    }
+  }
+
+  throw new Error(`NIM embedding request failed. Attempts: ${errors.join(' | ')}`);
 }
 
 async function generateGroundedAnswer(
@@ -718,7 +827,7 @@ ${context}
       model: GENERATION_MODEL,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.2,
-      max_tokens: 500,
+      max_tokens: 260,
     }),
   });
 
@@ -788,6 +897,9 @@ app.get('/api/transcript', async (req, res) => {
     const rawTranscript = await YoutubeTranscript.fetchTranscript(videoId);
 
     const transcript = normalizeTranscriptUnits(rawTranscript);
+    buildOrGetRagIndex(videoId, transcript).catch((error) => {
+      console.warn(`[rag] warmup failed for ${videoId}: ${error?.message ?? error}`);
+    });
     ensureVisualContext(videoId).catch((error) => {
       console.warn(`[visual] warmup failed for ${videoId}: ${error?.message ?? error}`);
     });
@@ -842,10 +954,16 @@ app.post('/api/ask', async (req, res) => {
   }
 
   try {
-    await Promise.race([
-      ensureVisualContext(videoId),
-      new Promise((resolve) => setTimeout(resolve, VISUAL_CONTEXT_TIMEOUT_MS)),
-    ]);
+    const visualQuestion = isVisualQuestion(question);
+    if (visualQuestion) {
+      await Promise.race([
+        ensureVisualContext(videoId),
+        new Promise((resolve) => setTimeout(resolve, VISUAL_CONTEXT_TIMEOUT_MS)),
+      ]);
+    } else {
+      // Keep visual pipeline running in the background without blocking normal asks.
+      ensureVisualContext(videoId).catch(() => {});
+    }
 
     const history = getSessionMemory(sessionId, videoId);
     const signals = detectMemorySignals(question.trim(), history);
@@ -956,6 +1074,25 @@ app.get('/api/insights', (req, res) => {
 
   const insights = computeLearnerInsights(String(sessionId), String(videoId));
   return res.json(insights);
+});
+
+app.get('/api/session-timeline', (req, res) => {
+  const sessionId = String(req.query.sessionId ?? '');
+  const videoId = String(req.query.videoId ?? '');
+  const limit = Math.min(60, Math.max(1, Number(req.query.limit) || 28));
+
+  if (!sessionId || !videoId) {
+    return res.status(400).json({ error: 'sessionId and videoId are required.' });
+  }
+
+  const analytics = getAnalytics(sessionId, videoId);
+  const feed = Array.isArray(analytics.activityFeed) ? analytics.activityFeed : [];
+  const items = feed
+    .slice()
+    .sort((a, b) => (b.at ?? 0) - (a.at ?? 0))
+    .slice(0, limit);
+
+  return res.json({ items });
 });
 
 app.get('/health', (_req, res) => res.json({ ok: true }));

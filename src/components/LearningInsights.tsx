@@ -1,29 +1,26 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Target, Activity, Zap, Brain, Loader2, AlertCircle } from 'lucide-react';
-import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar, Tooltip } from 'recharts';
-
-interface InsightsResponse {
-  weakTopics: Array<{ topic: string; mentions: number; struggleRate: number }>;
-  replayHotspots: Array<{ timestamp: number; count: number }>;
-  summary: {
-    totalQuestions: number;
-    repeatedQuestions: number;
-    confusionSignals: number;
-    fallbackAnswers: number;
-    quizMistakes: number;
-    confusionLevel: 'Low' | 'Medium' | 'High';
-    confusionScore: number;
-    fallbackRate: number;
-  };
-  learningPatterns: {
-    frequentlyRevisitedTopics: string[];
-    replayedSegments: number[];
-  };
-}
+import {
+  ResponsiveContainer,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  Radar,
+  Tooltip,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  LineChart,
+  Line,
+  CartesianGrid,
+} from 'recharts';
+import type { InsightsResponse } from '../types/insights';
 
 interface LearningInsightsProps {
-  sessionId: string;
-  videoId: string;
+  insights: InsightsResponse | null;
+  isLoading: boolean;
+  error: string | null;
 }
 
 function formatTime(seconds: number): string {
@@ -33,48 +30,7 @@ function formatTime(seconds: number): string {
   return `${m}:${rem.toString().padStart(2, '0')}`;
 }
 
-export function LearningInsights({ sessionId, videoId }: LearningInsightsProps) {
-  const [insights, setInsights] = useState<InsightsResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!sessionId || !videoId) {
-      setInsights(null);
-      setError(null);
-      return;
-    }
-
-    let cancelled = false;
-    const fetchInsights = async () => {
-      try {
-        setIsLoading(true);
-        const res = await fetch(
-          `/api/insights?sessionId=${encodeURIComponent(sessionId)}&videoId=${encodeURIComponent(videoId)}`
-        );
-        const data = (await res.json()) as InsightsResponse & { error?: string };
-        if (!res.ok) throw new Error(data.error ?? `Server error ${res.status}`);
-        if (!cancelled) {
-          setInsights(data);
-          setError(null);
-        }
-      } catch (err: unknown) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load insights.');
-        }
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    };
-
-    fetchInsights();
-    const interval = window.setInterval(fetchInsights, 5000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [sessionId, videoId]);
-
+export function LearningInsights({ insights, isLoading, error }: LearningInsightsProps) {
   const radarData = useMemo(() => {
     if (!insights || insights.weakTopics.length === 0) {
       return [{ subject: 'Focus', score: 80, fullMark: 100 }];
@@ -92,6 +48,49 @@ export function LearningInsights({ sessionId, videoId }: LearningInsightsProps) 
   const weakTopicHint = insights?.weakTopics[0]
     ? `${Math.round(insights.weakTopics[0].struggleRate * 100)}% struggle rate`
     : 'Keep asking questions to build profile';
+  const retentionScore = insights?.summary.retentionScore ?? 100;
+
+  const replayChartData = useMemo(
+    () =>
+      (insights?.replayHotspots ?? [])
+        .slice()
+        .sort((a, b) => a.timestamp - b.timestamp)
+        .map((spot) => ({ time: formatTime(spot.timestamp), replays: spot.count })),
+    [insights]
+  );
+
+  const confusionChartData = useMemo(
+    () =>
+      (insights?.confusionHeatmap ?? []).map((item) => ({
+        time: formatTime(item.timestamp),
+        intensity: item.intensity,
+      })),
+    [insights]
+  );
+
+  const adaptiveRecommendation = useMemo(() => {
+    if (!insights) {
+      return 'Ask a few lecture questions to generate personalized guidance.';
+    }
+
+    const topWeak = insights.weakTopics[0];
+    const topReplay = insights.replayHotspots[0];
+    const highConfusion = insights.summary.confusionLevel === 'High';
+
+    if (highConfusion && topWeak) {
+      return `You seem to struggle with ${topWeak.topic}. Switching to simpler explanations and short step-by-step breakdowns.`;
+    }
+    if (insights.summary.retentionScore < 45 && topReplay) {
+      return `Retention is dropping. Revisit the segment around ${formatTime(topReplay.timestamp)} and then ask for a quick recap quiz.`;
+    }
+    if (topWeak && topWeak.struggleRate >= 0.45) {
+      return `Focus next on ${topWeak.topic}. Try one concrete example before moving to the next concept.`;
+    }
+    if (insights.mostAskedConcepts.length > 0) {
+      return `You often ask about ${insights.mostAskedConcepts[0].concept}. I will keep responses concise and build progressively from that concept.`;
+    }
+    return 'Progress looks stable. Continue with conceptual questions to deepen understanding.';
+  }, [insights]);
 
   return (
     <div className="glass-panel w-full h-full rounded-2xl p-4 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
@@ -104,6 +103,11 @@ export function LearningInsights({ sessionId, videoId }: LearningInsightsProps) 
         <div className="text-xs text-slate-400 flex items-center gap-1.5">
           <Loader2 className="w-3 h-3 animate-spin" />
           Updating learner profile...
+          <div className="flex gap-1 ml-1">
+            <span className="w-1 h-1 rounded-full bg-indigo-400 animate-pulse" />
+            <span className="w-1 h-1 rounded-full bg-indigo-400 animate-pulse [animation-delay:120ms]" />
+            <span className="w-1 h-1 rounded-full bg-indigo-400 animate-pulse [animation-delay:240ms]" />
+          </div>
         </div>
       )}
 
@@ -113,6 +117,10 @@ export function LearningInsights({ sessionId, videoId }: LearningInsightsProps) 
           <span>{error}</span>
         </div>
       )}
+
+      <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-100">
+        {adaptiveRecommendation}
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50 flex flex-col gap-1 hover:-translate-y-1 hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10 transition-all cursor-pointer group">
@@ -136,6 +144,21 @@ export function LearningInsights({ sessionId, videoId }: LearningInsightsProps) 
         </div>
       </div>
 
+      <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50">
+        <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
+          <span className="uppercase tracking-wider font-medium">Retention Score</span>
+          <span className="text-slate-100 font-semibold">{retentionScore}%</span>
+        </div>
+        <div className="h-2.5 rounded-full bg-slate-900/70 overflow-hidden">
+          <div
+            className={`h-full transition-all duration-500 ${
+              retentionScore >= 70 ? 'bg-emerald-500' : retentionScore >= 40 ? 'bg-yellow-500' : 'bg-rose-500'
+            }`}
+            style={{ width: `${Math.max(4, retentionScore)}%` }}
+          />
+        </div>
+      </div>
+
       <div className="bg-slate-800/40 rounded-xl p-3 border border-slate-700/50 text-xs text-slate-300">
         <div className="font-medium text-slate-200 mb-1">Learning Pattern</div>
         <div className="text-slate-400">
@@ -149,6 +172,49 @@ export function LearningInsights({ sessionId, videoId }: LearningInsightsProps) 
                 .map((spot) => `${formatTime(spot.timestamp)} (${spot.count}x)`)
                 .join(', ')}`
             : 'Replay hotspots will appear after seeks.'}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="bg-slate-800/30 rounded-xl border border-slate-700/50 p-2 min-h-[140px]">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 px-1 pb-1">Replay-Heavy Segments</div>
+          <div className="w-full h-[120px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={replayChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="time" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                <YAxis allowDecimals={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="replays" fill="#22d3ee" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-slate-800/30 rounded-xl border border-slate-700/50 p-2 min-h-[140px]">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 px-1 pb-1">Confusion Heatmap</div>
+          <div className="w-full h-[120px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={confusionChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="time" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                <YAxis allowDecimals={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                <Tooltip />
+                <Line type="monotone" dataKey="intensity" stroke="#f43f5e" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-slate-800/40 rounded-xl p-3 border border-slate-700/50 text-xs text-slate-300">
+        <div className="font-medium text-slate-200 mb-1">Most Asked Concepts</div>
+        <div className="text-slate-400">
+          {insights?.mostAskedConcepts.length
+            ? insights.mostAskedConcepts
+                .map((item) => `${item.concept} (${item.mentions}x)`)
+                .join(', ')
+            : 'Concept frequency will appear as you ask questions.'}
         </div>
       </div>
 
