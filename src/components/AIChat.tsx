@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { captureClientException } from '../lib/monitoring';
 import { Send, Bot, Sparkles, User, Clock3, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { TranscriptItem } from './Transcript';
@@ -136,6 +137,7 @@ export function AIChat({
         streamAssistantMessage(assistantId, data.answer, data.sources ?? []);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Failed to get AI response.';
+        captureClientException(err, { scope: 'AIChat', videoId, route: '/api/ask' });
         setError(message);
         setIsTyping(false);
         setMessages((prev) => [

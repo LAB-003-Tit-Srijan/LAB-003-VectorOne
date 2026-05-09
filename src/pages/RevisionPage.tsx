@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { captureClientException } from '../lib/monitoring';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { BookMarked, Loader2, Sparkles } from 'lucide-react';
@@ -81,6 +82,7 @@ export function RevisionPage() {
         }
       }, 22);
     } catch (e: unknown) {
+      captureClientException(e, { scope: 'RevisionPage', route: '/api/ask' });
       setError(e instanceof Error ? e.message : 'Generation failed.');
       setLoading(false);
     }

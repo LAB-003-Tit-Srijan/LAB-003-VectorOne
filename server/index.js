@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import * as Sentry from '@sentry/node';
 import { YoutubeTranscript } from 'youtube-transcript';
 import os from 'os';
 import path from 'path';
@@ -9,6 +10,27 @@ import { mkdtemp, readdir, readFile, rm } from 'fs/promises';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const SENTRY_DSN = process.env.SENTRY_DSN;
+
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? 'development',
+    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? 0.05),
+    integrations: [Sentry.expressIntegration()],
+  });
+  process.on('unhandledRejection', (reason) => {
+    reportServerError(reason instanceof Error ? reason : new Error(String(reason)), {
+      type: 'unhandledRejection',
+    });
+  });
+}
+
+function reportServerError(error, context) {
+  if (!SENTRY_DSN || error == null) return;
+  const err = error instanceof Error ? error : new Error(String(error));
+  Sentry.captureException(err, { extra: context });
+}
 const NIM_API_KEY = process.env.NIM_API_KEY ?? process.env.NVIDIA_NIM_API_KEY;
 const NIM_BASE_URL = process.env.NIM_BASE_URL ?? 'https://integrate.api.nvidia.com/v1';
 const EMBEDDING_MODEL = process.env.NIM_EMBEDDING_MODEL ?? 'nvidia/nv-embedqa-e5-v5';
@@ -925,6 +947,7 @@ app.get('/api/transcript', async (req, res) => {
       });
     }
 
+    reportServerError(err, { route: 'GET /api/transcript', videoId });
     return res.status(500).json({
       error: 'Failed to fetch transcript. The video may be private, age-restricted, or unavailable.',
     });
@@ -1043,6 +1066,7 @@ ${webProfile.evidence}`
   } catch (err) {
     const message = err?.message ?? 'Failed to process question.';
     console.error('[ask]', message);
+    reportServerError(err, { route: 'POST /api/ask' });
     return res.status(500).json({
       error: message,
     });
@@ -1096,6 +1120,10 @@ app.get('/api/session-timeline', (req, res) => {
 });
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
+
+if (SENTRY_DSN) {
+  Sentry.setupExpressErrorHandler(app);
+}
 
 app.listen(PORT, () => {
   console.log(`✅  Transcript API server running on http://localhost:${PORT}`);
