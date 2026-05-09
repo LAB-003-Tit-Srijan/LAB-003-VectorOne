@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader2, Play } from 'lucide-react';
+import { parseTimestamp } from '../lib/youtube';
 
 interface VideoPlayerProps {
   url: string;
@@ -74,6 +75,8 @@ export function VideoPlayer({ url, onProgress, seekRequest, onSeekHandled }: Vid
 
     const videoId = extractVideoId(url);
     if (!videoId) return;
+    
+    const startSeconds = parseTimestamp(url);
 
     playerRef.current?.destroy?.();
     playerRef.current = new window.YT.Player(hostRef.current, {
@@ -86,6 +89,7 @@ export function VideoPlayer({ url, onProgress, seekRequest, onSeekHandled }: Vid
         rel: 0,
         modestbranding: 1,
         origin: window.location.origin,
+        ...(startSeconds ? { start: startSeconds } : {})
       },
       events: {
         onReady: () => {
