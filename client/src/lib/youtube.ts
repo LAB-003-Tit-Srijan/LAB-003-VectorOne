@@ -15,6 +15,29 @@ export function extractVideoId(input: string): string | null {
   return null;
 }
 
+export function parseTimestamp(input: string): number | undefined {
+  try {
+    const url = new URL(input);
+    const t = url.searchParams.get('t') || url.searchParams.get('start');
+    if (!t) return undefined;
+    
+    let seconds = 0;
+    if (/^\d+$/.test(t)) {
+      seconds = parseInt(t, 10);
+    } else {
+      const hMatch = t.match(/(\d+)h/);
+      const mMatch = t.match(/(\d+)m/);
+      const sMatch = t.match(/(\d+)s/);
+      if (hMatch) seconds += parseInt(hMatch[1], 10) * 3600;
+      if (mMatch) seconds += parseInt(mMatch[1], 10) * 60;
+      if (sMatch) seconds += parseInt(sMatch[1], 10);
+    }
+    return seconds > 0 ? seconds : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function normalizeTranscriptUnits(
   items: Array<{ text: string; start: number; duration: number; offset?: number }>
 ): TranscriptItem[] {

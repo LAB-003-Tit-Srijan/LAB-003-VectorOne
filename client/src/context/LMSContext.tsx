@@ -9,7 +9,7 @@ import {
 } from 'react';
 import type { TranscriptItem } from '../components/Transcript';
 import { useLearningData } from '../hooks/useLearningData';
-import { extractVideoId, normalizeTranscriptUnits } from '../lib/youtube';
+import { extractVideoId, parseTimestamp, normalizeTranscriptUnits } from '../lib/youtube';
 import { readRecentLectures, recordRecentLecture, type RecentLecture } from '../lib/recentLectures';
 import type { InsightsResponse, TimelineItem } from '../types/insights';
 import { DEFAULT_AI_PREFERENCES, type AiPreferences } from '../types/lms';
@@ -158,7 +158,9 @@ export function LMSProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const normalizedVideoUrl = `https://www.youtube.com/watch?v=${id}`;
+      const tParam = parseTimestamp(raw);
+      const suffix = tParam !== undefined ? `&t=${tParam}s` : '';
+      const normalizedVideoUrl = `https://www.youtube.com/watch?v=${id}${suffix}`;
       setVideoUrl(normalizedVideoUrl);
       setVideoId(id);
       setInputUrl(raw.includes('http') ? raw : `https://youtu.be/${id}`);
