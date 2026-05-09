@@ -68,6 +68,11 @@ export async function postAsk(req, res) {
     const topChunks = ranked.slice(0, RETRIEVAL_TOP_K);
     const bestScore = topChunks[0]?.score ?? 0;
     const lexicalMatch = hasLexicalOverlap(question.trim(), topChunks);
+    
+    console.log(`[ask] Question: "${question.trim()}"`);
+    console.log(`[ask] Best similarity score: ${bestScore.toFixed(4)} (Threshold: ${MIN_RELEVANCE_SCORE})`);
+    console.log(`[ask] Lexical match: ${lexicalMatch}`);
+
     const webProfile = await maybeResolvePersonFromWeb(videoId, question.trim());
     if (!topChunks.length || (bestScore < MIN_RELEVANCE_SCORE && !lexicalMatch)) {
       if (webProfile) {

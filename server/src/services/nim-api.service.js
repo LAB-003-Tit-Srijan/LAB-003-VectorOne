@@ -30,10 +30,16 @@ export async function requestEmbedding(model, payload) {
     throw new Error(`[model=${model}] (${res.status}) ${reason}`);
   }
 
+  // Debug: log response keys
+  console.log(`[embedding-api] Model: ${model}, Response keys: ${Object.keys(data).join(', ')}`);
+  if (data?.data) console.log(`[embedding-api] data.length: ${data.data.length}`);
+
   const vector = data?.data?.[0]?.embedding;
   if (!Array.isArray(vector) || vector.length === 0) {
-    throw new Error(`[model=${model}] Embedding API returned an empty vector.`);
+    console.error(`[embedding-api] Invalid structure:`, JSON.stringify(data).slice(0, 500));
+    throw new Error(`[model=${model}] Embedding API returned an empty or invalid vector.`);
   }
+  console.log(`[embedding-api] Successfully retrieved vector of length ${vector.length}`);
   return vector;
 }
 
@@ -51,7 +57,15 @@ export async function embedText(text, inputType) {
   const cached = embeddingStrategyCache.get(strategyKey);
   if (cached) {
     try {
-      return await requestEmbedding(cached.model, cached.payload);
+      // Reconstruct payload with NEW text but SAME structure that worked before
+      const variant = payloadVariants[cached.variantIndex];
+      const payload = { ...variant };
+      if (Array.isArray(variant.input)) {
+        payload.input = [text];
+      } else {
+        payload.input = text;
+      }
+      return await requestEmbedding(cached.model, payload);
     } catch {
       embeddingStrategyCache.delete(strategyKey);
     }
@@ -63,7 +77,8 @@ export async function embedText(text, inputType) {
       const payload = payloadVariants[idx];
       try {
         const vector = await requestEmbedding(model, payload);
-        embeddingStrategyCache.set(strategyKey, { model, payload });
+        // Cache the model and which variant index worked, NOT the payload itself
+        embeddingStrategyCache.set(strategyKey, { model, variantIndex: idx });
         return vector;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -205,6 +220,8 @@ ${context}
   }
 
   const answer = data?.choices?.[0]?.message?.content?.trim();
+  console.log(`[grounded-answer] LLM responded with: "${answer?.slice(0, 50)}..."`);
+  
   if (!answer) {
     return FALLBACK_ANSWER;
   }

@@ -24,7 +24,7 @@ export function normalizeTranscriptUnits(
   const looksLikeMilliseconds = sample.some((item) => {
     const duration = Number(item.duration ?? 0);
     const offset = Number(item.offset ?? item.start ?? 0);
-    return duration > 30 || offset > 300;
+    return duration > 1000 || offset > 100000;
   });
 
   const factor = looksLikeMilliseconds ? 1 / 1000 : 1;

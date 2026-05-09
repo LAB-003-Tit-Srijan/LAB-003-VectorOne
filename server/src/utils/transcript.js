@@ -5,7 +5,9 @@ export function normalizeTranscriptUnits(items) {
   const looksLikeMilliseconds = sample.some((item) => {
     const duration = Number(item?.duration ?? 0);
     const offset = Number(item?.offset ?? item?.start ?? 0);
-    return duration > 30 || offset > 300;
+    // Milliseconds detection: a duration > 1000s or offset > 100,000s (27 hours) 
+    // is a safer indicator than 300s (5 mins).
+    return duration > 1000 || offset > 100000;
   });
 
   const factor = looksLikeMilliseconds ? 1 / 1000 : 1;

@@ -20,8 +20,8 @@ export const EMBEDDING_FALLBACK_MODELS = (
 export const GENERATION_MODEL =
   process.env.NIM_GENERATION_MODEL ?? 'meta/llama-3.1-70b-instruct';
 export const FALLBACK_ANSWER = 'This topic is not covered in the lecture.';
-export const RETRIEVAL_TOP_K = 4;
-export const MIN_RELEVANCE_SCORE = 0.18;
+export const RETRIEVAL_TOP_K = 12;
+export const MIN_RELEVANCE_SCORE = 0.05;
 export const MAX_MEMORY_TURNS = 8;
 export const ENABLE_VISUAL_CONTEXT = process.env.ENABLE_VISUAL_CONTEXT !== 'false';
 export const VISION_MODEL =
