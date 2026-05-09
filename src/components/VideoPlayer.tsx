@@ -128,23 +128,24 @@ export function VideoPlayer({ url, onProgress, seekRequest, onSeekHandled }: Vid
   }, [seekRequest, onSeekHandled]);
 
   return (
-    <div className="glass-panel w-full h-full rounded-2xl overflow-hidden relative bg-slate-900 flex items-center justify-center">
+    <div className="glass-panel w-full h-full rounded-3xl overflow-hidden relative flex items-center justify-center">
 
       {/* State 1: No URL provided yet */}
       {!url && (
         <div className="flex flex-col items-center justify-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 shadow-lg">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center border shadow-lg" style={{ background: 'var(--surface-muted)', borderColor: 'var(--surface-border)' }}>
             <Play className="w-6 h-6 text-slate-500 ml-1" />
           </div>
-          <p className="text-slate-400 text-sm font-medium">Paste a YouTube URL to begin</p>
+          <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Paste a YouTube URL to begin</p>
         </div>
       )}
 
       {/* State 2: URL exists, but YouTube iframe API is still loading */}
       {url && !isApiReady && (
-        <div className="flex flex-col items-center justify-center gap-4">
+        <div className="flex flex-col items-center justify-center gap-4 w-full h-full relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
           <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
-          <p className="text-slate-400 text-sm font-medium">Loading video engine...</p>
+          <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Loading video engine...</p>
         </div>
       )}
 

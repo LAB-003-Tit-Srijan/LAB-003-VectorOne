@@ -50,18 +50,18 @@ export function Transcript({ transcriptData, currentTime, onSeek, isLoading, err
   }, [activeIndex]);
 
   return (
-    <div className="glass-panel w-full rounded-2xl flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between p-4 border-b border-slate-700/50 bg-slate-900/50">
-        <div className="flex items-center gap-2 text-slate-300">
+    <div className="glass-panel w-full rounded-3xl flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--surface-border)', background: 'var(--surface-muted)' }}>
+        <div className="flex items-center gap-2" style={{ color: 'var(--text-main)' }}>
           <FileText className="w-4 h-4" />
           <h3 className="font-semibold text-sm">Interactive Transcript</h3>
         </div>
-        <div className="text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded">
+        <div className="text-xs px-2 py-1 rounded" style={{ color: 'var(--text-muted)', background: 'var(--surface-card)' }}>
           Auto-scroll enabled
         </div>
       </div>
       
-      <div ref={containerRef} className="max-h-[360px] overflow-y-auto p-4 custom-scrollbar space-y-2 relative">
+      <div ref={containerRef} className="max-h-[380px] overflow-y-auto p-4 custom-scrollbar space-y-2 relative">
         {isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/50 z-10">
             <Loader2 className="w-6 h-6 text-indigo-500 animate-spin mb-2" />
@@ -90,8 +90,12 @@ export function Transcript({ transcriptData, currentTime, onSeek, isLoading, err
           return (
             <motion.div 
               whileHover={{ x: 4 }}
-              animate={isActive ? { x: 2, scale: 1.01 } : { x: 0, scale: 1 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
+              animate={
+                isActive
+                  ? { x: 2, scale: 1.01, boxShadow: '0 0 0 1px rgba(99,102,241,0.2), 0 0 24px rgba(99,102,241,0.15)' }
+                  : { x: 0, scale: 1, boxShadow: '0 0 0 0 rgba(0,0,0,0)' }
+              }
+              transition={{ duration: 0.22, ease: 'easeOut' }}
               key={idx}
               ref={isActive ? activeItemRef : null}
               onClick={() => onSeek(item.offset)}
