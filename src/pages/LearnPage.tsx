@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, type KeyboardEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { VideoPlayer } from '../components/VideoPlayer';
+import { VideoErrorBoundary } from '../components/VideoErrorBoundary';
 import { AIChat } from '../components/AIChat';
 import { Transcript } from '../components/Transcript';
 import { useLMS } from '../context/LMSContext';
@@ -90,12 +91,14 @@ export function LearnPage() {
         <div className="lg:col-span-7 flex flex-col gap-5">
           <motion.div layout className="rounded-2xl overflow-hidden border" style={{ borderColor: 'var(--surface-border)' }}>
             <div className="lg:h-[min(52vh,520px)] h-[min(42vh,380px)] min-h-[280px]">
-              <VideoPlayer
-                url={videoUrl}
-                onProgress={handleProgress}
-                seekRequest={seekRequest}
-                onSeekHandled={handleSeekHandled}
-              />
+              <VideoErrorBoundary>
+                <VideoPlayer
+                  url={videoUrl}
+                  onProgress={handleProgress}
+                  seekRequest={seekRequest}
+                  onSeekHandled={handleSeekHandled}
+                />
+              </VideoErrorBoundary>
             </div>
           </motion.div>
 

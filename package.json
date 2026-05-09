@@ -19,7 +19,6 @@
     "react-player": "^3.4.0",
     "react-router-dom": "^7.15.0",
     "recharts": "^3.8.1",
-    "serenity": "^1.1.6",
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
