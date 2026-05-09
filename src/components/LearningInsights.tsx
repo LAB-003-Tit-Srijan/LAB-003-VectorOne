@@ -1,5 +1,5 @@
 import { Target, Activity, Zap, Brain } from 'lucide-react';
-import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts';
+import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar, Tooltip } from 'recharts';
 
 const RADAR_DATA = [
   { subject: 'Calculus', A: 120, fullMark: 150 },
@@ -19,8 +19,8 @@ export function LearningInsights() {
       </div>
       
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50 flex flex-col gap-1">
-          <div className="flex items-center gap-1.5 text-slate-400 mb-1">
+        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50 flex flex-col gap-1 hover:-translate-y-1 hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10 transition-all cursor-pointer group">
+          <div className="flex items-center gap-1.5 text-slate-400 mb-1 group-hover:text-slate-300 transition-colors">
             <Zap className="w-3.5 h-3.5 text-yellow-400" />
             <span className="text-xs font-medium uppercase tracking-wider">Confusion</span>
           </div>
@@ -28,8 +28,8 @@ export function LearningInsights() {
           <div className="text-[10px] text-slate-500">Pace is optimal</div>
         </div>
         
-        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50 flex flex-col gap-1">
-          <div className="flex items-center gap-1.5 text-slate-400 mb-1">
+        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50 flex flex-col gap-1 hover:-translate-y-1 hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/10 transition-all cursor-pointer group">
+          <div className="flex items-center gap-1.5 text-slate-400 mb-1 group-hover:text-slate-300 transition-colors">
             <Target className="w-3.5 h-3.5 text-rose-400" />
             <span className="text-xs font-medium uppercase tracking-wider">Weak Topic</span>
           </div>
@@ -48,7 +48,11 @@ export function LearningInsights() {
             <RadarChart cx="50%" cy="50%" outerRadius="65%" data={RADAR_DATA}>
               <PolarGrid stroke="#334155" />
               <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-              <Radar name="Student" dataKey="A" stroke="#6366f1" fill="#6366f1" fillOpacity={0.4} />
+              <Radar name="Student Score" dataKey="A" stroke="#6366f1" fill="#6366f1" fillOpacity={0.4} />
+              <Tooltip 
+                contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', borderRadius: '8px', color: '#f8fafc', fontSize: '12px' }} 
+                itemStyle={{ color: '#818cf8', fontWeight: 'bold' }} 
+              />
             </RadarChart>
           </ResponsiveContainer>
         </div>

@@ -12,10 +12,15 @@ export function AIChat() {
   const [messages, setMessages] = useState(MOCK_CHAT);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
   };
 
   useEffect(() => {
@@ -63,7 +68,7 @@ export function AIChat() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-4">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-4">
         {messages.map((msg) => (
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
@@ -76,9 +81,9 @@ export function AIChat() {
             }`}>
               {msg.role === 'user' ? <User className="w-4 h-4 text-white" /> : <Bot className="w-4 h-4 text-white" />}
             </div>
-            <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${
+            <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
               msg.role === 'user' 
-                ? 'bg-slate-700/80 text-white rounded-tr-sm' 
+                ? 'bg-gradient-to-br from-slate-700 to-slate-800 text-white rounded-tr-sm border border-slate-600/50' 
                 : 'bg-indigo-500/10 border border-indigo-500/20 text-slate-100 rounded-tl-sm'
             }`}>
               {msg.text}
@@ -98,7 +103,6 @@ export function AIChat() {
             </div>
           </div>
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
@@ -110,7 +114,7 @@ export function AIChat() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Ask anything about the video..." 
-            className="w-full bg-slate-950/50 border border-slate-700/50 rounded-xl py-3 pl-4 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 text-white placeholder-slate-500"
+            className="w-full bg-slate-950/50 border border-slate-700/50 rounded-xl py-3 pl-4 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 focus:shadow-[0_0_15px_rgba(99,102,241,0.2)] transition-all text-white placeholder-slate-500"
           />
           <button 
             onClick={handleSend}

@@ -29,8 +29,8 @@ export function Transcript() {
             key={idx} 
             className={`flex gap-4 p-3 rounded-xl cursor-pointer transition-colors duration-200 ${
               item.active 
-                ? 'bg-indigo-500/10 border border-indigo-500/20' 
-                : 'hover:bg-slate-800/50 border border-transparent'
+                ? 'bg-indigo-500/10 border border-indigo-500/20 border-l-[3px] border-l-indigo-500' 
+                : 'hover:bg-slate-800/50 border border-transparent border-l-[3px] border-l-transparent'
             }`}
           >
             <div className={`flex items-center gap-1.5 text-xs font-mono font-medium mt-0.5 ${

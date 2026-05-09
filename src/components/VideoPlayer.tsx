@@ -16,20 +16,25 @@ export function VideoPlayer() {
 
       {/* Play Button Overlay */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none group-hover:bg-slate-900/20 transition-all duration-300">
-        <motion.div 
-          whileHover={{ scale: 1.1 }}
-          className="w-16 h-16 rounded-full bg-indigo-500/90 backdrop-blur-sm flex items-center justify-center shadow-xl shadow-indigo-500/20 cursor-pointer pointer-events-auto"
-        >
-          <Play className="w-8 h-8 text-white ml-1" />
-        </motion.div>
+        <div className="relative flex items-center justify-center">
+          <div className="absolute w-16 h-16 bg-indigo-500 rounded-full animate-ping opacity-60" />
+          <motion.div 
+            whileHover={{ scale: 1.1 }}
+            className="relative z-10 w-16 h-16 rounded-full bg-indigo-500/90 backdrop-blur-sm flex items-center justify-center shadow-xl shadow-indigo-500/20 cursor-pointer pointer-events-auto"
+          >
+            <Play className="w-8 h-8 text-white ml-1" />
+          </motion.div>
+        </div>
       </div>
 
       {/* Bottom Controls */}
       <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-slate-900 to-transparent translate-y-full group-hover:translate-y-0 transition-transform duration-300">
         <div className="flex flex-col gap-2">
           {/* Progress Bar */}
-          <div className="h-1.5 w-full bg-slate-700/50 rounded-full overflow-hidden cursor-pointer">
-            <div className="h-full bg-indigo-500 w-[45%]" />
+          <div className="group/progress relative h-1.5 hover:h-2 transition-all duration-300 w-full bg-slate-700/50 rounded-full overflow-hidden cursor-pointer">
+            <div className="h-full bg-indigo-500 w-[45%] relative">
+               <div className="absolute right-0 top-0 bottom-0 w-2 bg-indigo-300 shadow-[0_0_10px_rgba(99,102,241,1)] rounded-full opacity-0 group-hover/progress:opacity-100 transition-opacity" />
+            </div>
           </div>
           
           {/* Controls */}
