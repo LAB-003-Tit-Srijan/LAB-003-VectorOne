@@ -1,0 +1,16 @@
+{
+  "name": "anva-ai-transcript-server",
+  "version": "1.0.0",
+  "description": "Minimal Express server for fetching YouTube transcripts",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "youtube-transcript": "^1.3.1"
+  }
+}
