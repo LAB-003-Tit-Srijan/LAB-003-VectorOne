@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useCallback, useState } from 'react';
 
 
 import { VideoPlayer } from './components/VideoPlayer';
@@ -25,6 +25,32 @@ function extractVideoId(input: string): string | null {
   return null;
 }
 
+function normalizeTranscriptUnits(
+  items: Array<{ text: string; start: number; duration: number; offset?: number }>
+): TranscriptItem[] {
+  if (!items.length) return [];
+
+  const sample = items.slice(0, 8);
+  const looksLikeMilliseconds = sample.some((item) => {
+    const duration = Number(item.duration ?? 0);
+    const offset = Number(item.offset ?? item.start ?? 0);
+    return duration > 30 || offset > 300;
+  });
+
+  const factor = looksLikeMilliseconds ? 1 / 1000 : 1;
+
+  return items.map((item) => {
+    const startRaw = Number(item.offset ?? item.start ?? 0);
+    const durationRaw = Number(item.duration ?? 0);
+
+    return {
+      text: item.text,
+      offset: Number.isFinite(startRaw) ? startRaw * factor : 0,
+      duration: Number.isFinite(durationRaw) ? durationRaw * factor : 0,
+    };
+  });
+}
+
 function App() {
   const [learningMode, setLearningMode] = useState('Beginner');
   
@@ -32,7 +58,7 @@ function App() {
   const [inputUrl, setInputUrl] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
   const [currentTime, setCurrentTime] = useState(0);
-  const playerRef = useRef<any>(null);
+  const [seekRequest, setSeekRequest] = useState<number | null>(null);
 
   // Transcript State
   const [transcriptData, setTranscriptData] = useState<TranscriptItem[]>([]);
@@ -41,11 +67,20 @@ function App() {
 
   const handleUrlSubmit = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      const url = inputUrl.trim();
-      if (url) {
-        setVideoUrl(url);
-        fetchTranscript(url);
+      const rawInput = inputUrl.trim();
+      if (!rawInput) return;
+
+      const videoId = extractVideoId(rawInput);
+      if (!videoId) {
+        setTranscriptError('Invalid YouTube URL — could not extract a video ID.');
+        setVideoUrl('');
+        return;
       }
+
+      // Normalise to a canonical YouTube URL so the player can always resolve it.
+      const normalizedVideoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      setVideoUrl(normalizedVideoUrl);
+      fetchTranscript(videoId);
     }
   };
 
@@ -71,13 +106,7 @@ function App() {
 
       // Backend returns { transcript: [{ text, start, duration, offset }] }
       // Normalise to the shape the Transcript component expects (uses `offset`)
-      const normalised: TranscriptItem[] = (data.transcript ?? []).map(
-        (item: { text: string; start: number; duration: number; offset?: number }) => ({
-          text: item.text,
-          duration: item.duration,
-          offset: item.offset ?? item.start,
-        })
-      );
+      const normalised = normalizeTranscriptUnits(data.transcript ?? []);
 
       setTranscriptData(normalised);
     } catch (err: unknown) {
@@ -89,15 +118,17 @@ function App() {
     }
   };
 
-  const handleSeek = (time: number) => {
-    if (playerRef.current) {
-      playerRef.current.seekTo(time, 'seconds');
-    }
-  };
+  const handleSeek = useCallback((time: number) => {
+    setSeekRequest(time);
+  }, []);
 
-  const handleProgress = (state: { playedSeconds: number }) => {
+  const handleProgress = useCallback((state: { playedSeconds: number }) => {
     setCurrentTime(state.playedSeconds);
-  };
+  }, []);
+
+  const handleSeekHandled = useCallback(() => {
+    setSeekRequest(null);
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 overflow-x-hidden relative selection:bg-indigo-500/30">
@@ -154,7 +185,8 @@ function App() {
               <VideoPlayer 
                 url={videoUrl} 
                 onProgress={handleProgress} 
-                playerRef={playerRef} 
+                seekRequest={seekRequest}
+                onSeekHandled={handleSeekHandled}
               />
             </div>
             

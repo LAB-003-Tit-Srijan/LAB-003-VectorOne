@@ -35,6 +35,34 @@ function extractVideoId(input) {
   return null;
 }
 
+function normalizeTranscriptUnits(items) {
+  if (!Array.isArray(items) || items.length === 0) return [];
+
+  const sample = items.slice(0, 8);
+  const looksLikeMilliseconds = sample.some((item) => {
+    const duration = Number(item?.duration ?? 0);
+    const offset = Number(item?.offset ?? item?.start ?? 0);
+    // Caption durations over ~30 are unlikely in seconds for normal subtitle chunks.
+    return duration > 30 || offset > 300;
+  });
+
+  const factor = looksLikeMilliseconds ? 1 / 1000 : 1;
+
+  return items.map((item) => {
+    const startRaw = Number(item?.offset ?? item?.start ?? 0);
+    const durationRaw = Number(item?.duration ?? 0);
+    const start = Number.isFinite(startRaw) ? startRaw * factor : 0;
+    const duration = Number.isFinite(durationRaw) ? durationRaw * factor : 0;
+
+    return {
+      text: item?.text ?? '',
+      start,
+      duration,
+      offset: start,
+    };
+  });
+}
+
 /**
  * GET /api/transcript?videoId=<id_or_url>
  *
@@ -59,15 +87,7 @@ app.get('/api/transcript', async (req, res) => {
   try {
     const rawTranscript = await YoutubeTranscript.fetchTranscript(videoId);
 
-    // Normalise field names: youtube-transcript uses `offset`, we expose `start`
-    // so the frontend can use either.
-    const transcript = rawTranscript.map((item) => ({
-      text: item.text,
-      start: item.offset,        // seconds (float)
-      duration: item.duration,   // seconds (float)
-      // keep offset too for backward compat
-      offset: item.offset,
-    }));
+    const transcript = normalizeTranscriptUnits(rawTranscript);
 
     return res.json({ transcript });
   } catch (err) {
