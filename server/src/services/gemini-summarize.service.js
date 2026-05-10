@@ -117,3 +117,73 @@ ${text}
     })),
   };
 }
+
+/**
+ * @param {string} rawText
+ * @param {'full' | 'last5mins' | 'topic' | 'exam'} type
+ * @returns {Promise<{ sections: Array<{ title: string; content: string }> }>}
+ */
+export async function generateSmartSummary(rawText, type) {
+  if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured.');
+
+  const text = rawText.length > GEMINI_SUMMARIZE_MAX_INPUT_CHARS
+    ? rawText.slice(0, GEMINI_SUMMARIZE_MAX_INPUT_CHARS)
+    : rawText;
+
+  const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+  const model = genAI.getGenerativeModel({
+    model: GEMINI_MODEL,
+    generationConfig: {
+      temperature: 0.35,
+      responseMimeType: 'application/json',
+    },
+  });
+
+  let instruction = '';
+  switch (type) {
+    case 'full':
+      instruction = `Analyze the transcript and provide a structured summary. Include an overview, key takeaways, and a conclusion.`;
+      break;
+    case 'last5mins':
+      instruction = `Analyze this recently covered transcript segment. Provide recent context and highlight key actions or points.`;
+      break;
+    case 'topic':
+      instruction = `Divide the transcript into main topics and explain each topic clearly.`;
+      break;
+    case 'exam':
+      instruction = `Extract exam preparation material from the transcript. Include core concepts to memorize and a few flashcard Q&As.`;
+      break;
+    default:
+      throw new Error('Invalid summary type');
+  }
+
+  const prompt = `${instruction}
+
+Provide your response strictly as a JSON object with this exact structure:
+{
+  "sections": [
+    { "title": "Section Title", "content": "Detailed content..." }
+  ]
+}
+
+TRANSCRIPT:
+"""
+${text}
+"""`;
+
+  const result = await model.generateContent(prompt);
+  const response = result.response;
+  const outText = response.text();
+  const parsed = parseModelJson(outText);
+
+  if (!parsed.sections || !Array.isArray(parsed.sections)) {
+    throw new Error('Invalid response: missing "sections" array');
+  }
+
+  return {
+    sections: parsed.sections.map(s => ({
+      title: String(s.title || '').trim(),
+      content: String(s.content || '').trim()
+    }))
+  };
+}

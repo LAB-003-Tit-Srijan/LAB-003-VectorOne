@@ -272,3 +272,89 @@ ${context}
   }
   return answer;
 }
+
+export async function generateSmartSummaryNIM(rawText, type) {
+  if (!NIM_API_KEY) throw new Error('NIM_API_KEY is not configured.');
+
+  // The model configured (google/gemma-2-2b-it) only supports up to 4096 tokens total.
+  // We slice aggressively to ~9000 chars (~2500 tokens) to ensure the request succeeds.
+  const text = rawText.length > 9000 ? rawText.slice(0, 9000) : rawText;
+
+  let instruction = '';
+  switch (type) {
+    case 'full':
+      instruction = `Analyze the transcript and provide a structured summary. Include an overview, key takeaways, and a conclusion.`;
+      break;
+    case 'last5mins':
+      instruction = `Analyze this recently covered transcript segment. Provide recent context and highlight key actions or points.`;
+      break;
+    case 'topic':
+      instruction = `Divide the transcript into main topics and explain each topic clearly.`;
+      break;
+    case 'exam':
+      instruction = `Extract exam preparation material from the transcript. Include core concepts to memorize and a few flashcard Q&As.`;
+      break;
+    default:
+      throw new Error('Invalid summary type');
+  }
+
+  const prompt = `${instruction}
+
+Provide your response strictly as a JSON object with this exact structure:
+{
+  "sections": [
+    { "title": "Section Title", "content": "Detailed content..." }
+  ]
+}
+
+TRANSCRIPT:
+"""
+${text}
+"""`;
+
+  const res = await fetch(`${NIM_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${NIM_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: GENERATION_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.2,
+      max_tokens: 1500,
+    }),
+  });
+
+  const data = await parseJsonSafe(res);
+  if (!res.ok) {
+    const reason = extractApiError(data, 'NIM chat request failed.');
+    throw new Error(`NIM summarization request failed (${res.status}): ${reason}`);
+  }
+
+  const answer = data?.choices?.[0]?.message?.content?.trim() || '';
+  
+  let parsed;
+  try {
+    const start = answer.indexOf('{');
+    const end = answer.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      parsed = JSON.parse(answer.slice(start, end + 1));
+    } else {
+      parsed = JSON.parse(answer);
+    }
+  } catch (e) {
+    throw new Error('Model response was not valid JSON');
+  }
+
+  if (!parsed.sections || !Array.isArray(parsed.sections)) {
+    throw new Error('Invalid response: missing "sections" array');
+  }
+
+  return {
+    sections: parsed.sections.map(s => ({
+      title: String(s.title || '').trim(),
+      content: String(s.content || '').trim()
+    }))
+  };
+}
