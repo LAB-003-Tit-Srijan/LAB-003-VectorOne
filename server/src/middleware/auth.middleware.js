@@ -27,7 +27,7 @@ export async function authenticate(req, res, next) {
 
     const rawToken = match[1].trim();
     if (!rawToken) {
-      return res.status(401).json({ error: 'Bearer token is empty. Export TOKEN from the login JSON response.' });
+      return res.status(401).json({ error: 'Bearer token is empty.' });
     }
 
     const decoded = verifyAccessToken(rawToken);
@@ -60,8 +60,7 @@ export async function authenticate(req, res, next) {
 
     if (name === 'JsonWebTokenError') {
       return res.status(401).json({
-        error:
-          'Invalid JWT (wrong signature or malformed). Log in again, copy accessToken exactly (no quotes/spaces). If you restarted the server, ensure JWT_ACCESS_SECRET is unchanged.',
+        error: 'Invalid JWT. Log in again.',
       });
     }
 
@@ -71,7 +70,7 @@ export async function authenticate(req, res, next) {
     }
 
     return res.status(401).json({
-      error: msg.includes('expired') ? 'Access token expired.' : msg || 'Unauthorized.',
+      error: msg.includes('expired') ? 'Access token expired.' : 'Unauthorized.',
     });
   }
 }

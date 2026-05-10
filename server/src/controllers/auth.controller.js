@@ -101,17 +101,22 @@ export async function postGoogle(req, res) {
     return res.status(503).json({ error: 'Google Sign-In is not configured (GOOGLE_CLIENT_ID).' });
   }
 
-  const raw = req.body?.credential;
-  const credential = typeof raw === 'string' ? raw.trim() : '';
+  const credential = typeof req.body?.credential === 'string' ? req.body.credential.trim() : '';
   if (!credential) {
-    return res.status(400).json({ error: 'credential (Google ID token) is required.' });
+    return res.status(400).json({ error: 'Google credential (ID token) is required.' });
+  }
+
+  // Ensure GOOGLE_CLIENT_ID is valid format
+  const sanitizedClientId = GOOGLE_CLIENT_ID.trim();
+  if (!sanitizedClientId.endsWith('.apps.googleusercontent.com')) {
+    console.error('[auth/google] Invalid GOOGLE_CLIENT_ID format. It should end with .apps.googleusercontent.com');
   }
 
   try {
-    const client = new OAuth2Client(GOOGLE_CLIENT_ID);
+    const client = new OAuth2Client(sanitizedClientId);
     const ticket = await client.verifyIdToken({
       idToken: credential,
-      audience: GOOGLE_CLIENT_ID,
+      audience: sanitizedClientId,
     });
     const payload = ticket.getPayload();
     if (!payload?.email) {
