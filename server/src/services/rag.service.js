@@ -1,7 +1,7 @@
 import { ENABLE_VISUAL_CONTEXT, NIM_API_KEY } from '../config/env.js';
 import { ragStore, visualStore } from '../models/stores.js';
 import { normalizeTranscriptUnits, chunkTranscript } from '../utils/transcript.js';
-import { embedText, describeFrameWithVision } from './nim-api.service.js';
+import { embedText, embedTextBatch, describeFrameWithVision } from './nim-api.service.js';
 import { sampleFramesForVideo } from './visual-frames.service.js';
 
 export function getVisualContext(videoId) {
@@ -22,6 +22,7 @@ async function buildVisualContext(videoId) {
 
   const chunks = [];
   for (const frame of frames) {
+    // Describe frames sequentially to avoid overloading the vision API
     const chunk = await describeFrameWithVision(videoId, frame);
     const embedding = await embedText(chunk.text, 'passage');
     chunks.push({ ...chunk, embedding });
@@ -68,10 +69,18 @@ export async function buildOrGetRagIndex(videoId, transcript) {
   }
 
   const chunks = chunkTranscript(normalized);
+  const BATCH_SIZE = 16;
   const withEmbeddings = [];
-  for (const chunk of chunks) {
-    const embedding = await embedText(chunk.text, 'passage');
-    withEmbeddings.push({ ...chunk, embedding, sourceType: 'transcript' });
+
+  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+    const batch = chunks.slice(i, i + BATCH_SIZE);
+    const embeddings = await embedTextBatch(
+      batch.map((c) => c.text),
+      'passage'
+    );
+    batch.forEach((chunk, idx) => {
+      withEmbeddings.push({ ...chunk, embedding: embeddings[idx], sourceType: 'transcript' });
+    });
   }
 
   withEmbeddings.push(...visualChunks);

@@ -5,6 +5,7 @@ import { VideoPlayer } from '../components/VideoPlayer';
 import { VideoErrorBoundary } from '../components/VideoErrorBoundary';
 import { AIChat } from '../components/AIChat';
 import { Transcript } from '../components/Transcript';
+import { SmartSummaries } from '../components/SmartSummaries';
 import { useLMS } from '../context/LMSContext';
 
 export function LearnPage() {
@@ -108,6 +109,12 @@ export function LearnPage() {
             onSeek={handleSeek}
             isLoading={isTranscriptLoading}
             error={transcriptError}
+          />
+          
+          <SmartSummaries 
+            videoId={videoId} 
+            transcriptData={transcriptData} 
+            currentTime={currentTime} 
           />
         </div>
 

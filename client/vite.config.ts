@@ -7,7 +7,16 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        // 127.0.0.1 avoids some IPv6(::1) vs IPv4-only listener mismatches on "localhost"
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true,
+      },
+    },
+  },
+  preview: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:3001',
         changeOrigin: true,
       },
     },

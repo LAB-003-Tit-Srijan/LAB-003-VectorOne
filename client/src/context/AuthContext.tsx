@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { apiUrl } from '../lib/apiBase';
 
 const ACCESS_KEY = 'lms_access_token';
 const REFRESH_KEY = 'lms_refresh_token';
@@ -34,8 +35,12 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 async function parseJson(res: Response): Promise<Record<string, unknown>> {
+  const text = await res.text();
+  const head = text.trimStart().toLowerCase();
+  if (head.startsWith('<!doctype') || head.startsWith('<html')) return {};
+  if (!text.trim()) return {};
   try {
-    return (await res.json()) as Record<string, unknown>;
+    return JSON.parse(text) as Record<string, unknown>;
   } catch {
     return {};
   }
@@ -76,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const rt = refreshTokenRef.current;
     if (!rt) return false;
     try {
-      const res = await fetch('/api/auth/refresh', {
+      const res = await fetch(apiUrl('/api/auth/refresh'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken: rt }),
@@ -106,7 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const res = await fetch('/api/auth/me', {
+        const res = await fetch(apiUrl('/api/auth/me'), {
           headers: { Authorization: `Bearer ${at}` },
         });
         if (res.ok) {
@@ -117,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const ok = await refreshSession();
           if (ok && !cancelled) {
             const nextAt = localStorage.getItem(ACCESS_KEY);
-            const res2 = await fetch('/api/auth/me', {
+            const res2 = await fetch(apiUrl('/api/auth/me'), {
               headers: { Authorization: `Bearer ${nextAt}` },
             });
             if (res2.ok) {
@@ -150,7 +155,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const token = accessToken ?? localStorage.getItem(ACCESS_KEY);
       if (token) headers.set('Authorization', `Bearer ${token}`);
 
-      let res = await fetch(input, { ...init, headers });
+      const url = typeof input === 'string' ? apiUrl(input) : input;
+      let res = await fetch(url, { ...init, headers });
 
       if (res.status === 401) {
         const refreshed = await refreshSession();
@@ -158,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const next = localStorage.getItem(ACCESS_KEY);
           const h2 = new Headers(init.headers);
           if (next) h2.set('Authorization', `Bearer ${next}`);
-          res = await fetch(input, { ...init, headers: h2 });
+          res = await fetch(url, { ...init, headers: h2 });
         }
       }
 
@@ -169,7 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -184,7 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (email: string, password: string, name?: string) => {
-      const res = await fetch('/api/auth/register', {
+      const res = await fetch(apiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, name }),
@@ -199,7 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithGoogleCredential = useCallback(
     async (credential: string) => {
-      const res = await fetch('/api/auth/google', {
+      const res = await fetch(apiUrl('/api/auth/google'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ credential }),
@@ -216,7 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = accessToken ?? localStorage.getItem(ACCESS_KEY);
     try {
       if (token) {
-        await fetch('/api/auth/logout', {
+        await fetch(apiUrl('/api/auth/logout'), {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         });

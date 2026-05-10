@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { InsightsResponse, TimelineItem } from '../types/insights';
 import { captureClientException } from '../lib/monitoring';
 import { useAuth } from '../context/AuthContext';
+import { parseJsonBody } from '../lib/apiBase';
 
 export function useLearningData(sessionId: string, videoId: string, pollMs = 5000) {
   const { authFetch } = useAuth();
@@ -33,8 +34,8 @@ export function useLearningData(sessionId: string, videoId: string, pollMs = 500
           ),
         ]);
 
-        const insData = (await insRes.json()) as InsightsResponse & { error?: string };
-        const tlData = (await tlRes.json()) as { items?: TimelineItem[]; error?: string };
+        const insData = await parseJsonBody<InsightsResponse & { error?: string }>(insRes);
+        const tlData = await parseJsonBody<{ items?: TimelineItem[]; error?: string }>(tlRes);
 
         if (!insRes.ok) throw new Error(insData.error ?? `Insights error ${insRes.status}`);
         if (!tlRes.ok) throw new Error(tlData.error ?? `Timeline error ${tlRes.status}`);
