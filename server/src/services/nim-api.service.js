@@ -273,6 +273,145 @@ ${context}
   return answer;
 }
 
+export async function* generateGroundedAnswerStream(
+  question,
+  topChunks,
+  memory,
+  learnerInsights,
+  externalProfileContext = '',
+  retryCount = 0
+) {
+  const maxRetries = 2;
+  const MAX_CONTEXT_CHARS = 10000;
+  let context = '';
+  let activeChunks = [...topChunks];
+
+  while (activeChunks.length > 0) {
+    context = activeChunks
+      .map(
+        (chunk, idx) =>
+          `[${idx + 1}] (${chunk.sourceType ?? 'transcript'}) ${chunk.start.toFixed(2)}s-${chunk.end.toFixed(2)}s\n${chunk.text}`
+      )
+      .join('\n\n');
+
+    if (context.length <= MAX_CONTEXT_CHARS || activeChunks.length === 1) {
+      break;
+    }
+    activeChunks.pop();
+  }
+
+  const historyBlock =
+    memory.history.length === 0
+      ? 'No prior chat turns in this session.'
+      : memory.history
+          .map(
+            (turn, index) =>
+              `${index + 1}. User: ${turn.question}\n   Assistant: ${turn.answer}`
+          )
+          .join('\n');
+
+  const prompt = `You are an AI lecture companion for a single lecture transcript.
+Strict Rules:
+- Answer using the transcript context provided below.
+- If the context doesn't contain the answer, you can use session memory to clarify or ask for more detail.
+- If the answer is completely missing and unrelated to the lecture, respond with: "${FALLBACK_ANSWER}"
+- You can respond to greetings (like "hi" or "hello") naturally before addressing the lecture content.
+- Keep the answer concise and instructional.
+- When possible, include lecture timestamps from context in the answer (example: "around 12:43").
+- Use recent session memory to personalize guidance and acknowledge learning struggles when relevant.
+- Use visual context lines when the user asks about diagrams, on-screen text, or what is shown.
+- For person-identity questions, use the "External profile context" if provided.
+- If the user asks for a summary, provide a brief overview based on the provided chunks, noting that it is a partial summary.
+
+Question:
+${question}
+
+Recent session memory:
+${historyBlock}
+
+Memory hints:
+- repeated_question: ${memory.signals.repeated ? 'yes' : 'no'}
+- confusing_followup: ${memory.signals.confusing ? 'yes' : 'no'}
+- previous_similar_question: ${memory.signals.repeatedQuestion || 'none'}
+
+Learner behavior summary:
+- confusion_level: ${learnerInsights.summary.confusionLevel}
+- repeated_questions: ${learnerInsights.summary.repeatedQuestions}
+- quiz_mistakes: ${learnerInsights.summary.quizMistakes}
+- weak_topics: ${learnerInsights.weakTopics.map((item) => item.topic).join(', ') || 'none'}
+- replay_hotspots: ${
+    learnerInsights.replayHotspots.map((item) => formatTimestamp(item.timestamp)).join(', ') || 'none'
+  }
+
+External profile context:
+${externalProfileContext || 'none'}
+
+Transcript context:
+${context}
+`;
+
+  const res = await fetch(`${NIM_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${NIM_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: GENERATION_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.2,
+      max_tokens: 260,
+      stream: true,
+    }),
+  });
+
+  if (res.status === 429 && retryCount < maxRetries) {
+    const delay = Math.pow(2, retryCount) * 2000 + Math.random() * 500;
+    console.warn(`[chat-api] Rate limited (429). Retrying in ${Math.round(delay)}ms...`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+    yield* generateGroundedAnswerStream(question, topChunks, memory, learnerInsights, externalProfileContext, retryCount + 1);
+    return;
+  }
+
+  if (!res.ok) {
+    // Read the body text for debugging before throwing
+    const errText = await res.text();
+    throw new Error(`NIM stream request failed (${res.status}): ${errText}`);
+  }
+
+  // Handle the streaming response
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || ''; // Keep the incomplete line in the buffer
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data: ')) continue;
+      
+      const dataStr = trimmed.slice(6);
+      if (dataStr === '[DONE]') continue;
+
+      try {
+        const data = JSON.parse(dataStr);
+        const chunk = data.choices?.[0]?.delta?.content;
+        if (chunk) {
+          yield chunk;
+        }
+      } catch (e) {
+        // Ignore JSON parse errors for incomplete chunks
+      }
+    }
+  }
+}
+
 export async function generateSmartSummaryNIM(rawText, type) {
   if (!NIM_API_KEY) throw new Error('NIM_API_KEY is not configured.');
 

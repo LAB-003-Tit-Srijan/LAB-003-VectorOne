@@ -7,7 +7,7 @@ import {
 } from '../config/env.js';
 import { cosineSimilarity } from '../utils/vector.js';
 import { isVisualQuestion, hasLexicalOverlap } from '../utils/text.js';
-import { generateGroundedAnswer, embedText } from '../services/nim-api.service.js';
+import { generateGroundedAnswer, generateGroundedAnswerStream, embedText } from '../services/nim-api.service.js';
 import { maybeResolvePersonFromWeb } from '../services/web-profile.service.js';
 import { buildOrGetRagIndex, ensureVisualContext } from '../services/rag.service.js';
 import {
@@ -74,57 +74,71 @@ export async function postAsk(req, res) {
     console.log(`[ask] Lexical match: ${lexicalMatch}`);
 
     const webProfile = await maybeResolvePersonFromWeb(videoId, question.trim());
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders(); // Ensure headers are sent immediately
+
     if (!topChunks.length || (bestScore < MIN_RELEVANCE_SCORE && !lexicalMatch)) {
       if (webProfile) {
         const memory = {
           history: history.slice(-4),
           signals,
         };
-        const answerFromWeb = await generateGroundedAnswer(
+        const stream = generateGroundedAnswerStream(
           question.trim(),
           topChunks,
           memory,
           learnerInsights,
-          `Video title: ${webProfile.metadata.title}
-Channel: ${webProfile.metadata.channel}
-Video URL: ${webProfile.metadata.webpageUrl}
-Web evidence:
-${webProfile.evidence}`
+          `Video title: ${webProfile.metadata.title}\nChannel: ${webProfile.metadata.channel}\nVideo URL: ${webProfile.metadata.webpageUrl}\nWeb evidence:\n${webProfile.evidence}`
         );
-        saveSessionTurn(sessionId, videoId, question.trim(), answerFromWeb);
-        trackQuestionOutcome(sessionId, videoId, question.trim(), answerFromWeb, signals);
-        return res.json({ answer: answerFromWeb, sources: [] });
+        
+        let fullAnswer = '';
+        for await (const chunk of stream) {
+          fullAnswer += chunk;
+          res.write(`data: ${JSON.stringify({ type: 'chunk', text: chunk })}\n\n`);
+        }
+        
+        saveSessionTurn(sessionId, videoId, question.trim(), fullAnswer);
+        trackQuestionOutcome(sessionId, videoId, question.trim(), fullAnswer, signals);
+        res.write(`data: ${JSON.stringify({ type: 'done', sources: [] })}\n\n`);
+        return res.end();
       }
 
       const answer = FALLBACK_ANSWER;
       saveSessionTurn(sessionId, videoId, question.trim(), answer);
       trackQuestionOutcome(sessionId, videoId, question.trim(), answer, signals);
-      return res.json({
-        answer: FALLBACK_ANSWER,
-        sources: [],
-      });
+      res.write(`data: ${JSON.stringify({ type: 'chunk', text: answer })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'done', sources: [] })}\n\n`);
+      return res.end();
     }
 
     const memory = {
       history: history.slice(-4),
       signals,
     };
-    const answer = await generateGroundedAnswer(
+    
+    const stream = generateGroundedAnswerStream(
       question.trim(),
       topChunks,
       memory,
       learnerInsights,
       webProfile
-        ? `Video title: ${webProfile.metadata.title}
-Channel: ${webProfile.metadata.channel}
-Video URL: ${webProfile.metadata.webpageUrl}
-Web evidence:
-${webProfile.evidence}`
+        ? `Video title: ${webProfile.metadata.title}\nChannel: ${webProfile.metadata.channel}\nVideo URL: ${webProfile.metadata.webpageUrl}\nWeb evidence:\n${webProfile.evidence}`
         : ''
     );
-    saveSessionTurn(sessionId, videoId, question.trim(), answer);
-    trackQuestionOutcome(sessionId, videoId, question.trim(), answer, signals);
-    const isFallback = answer.includes(FALLBACK_ANSWER);
+
+    let fullAnswer = '';
+    for await (const chunk of stream) {
+      fullAnswer += chunk;
+      res.write(`data: ${JSON.stringify({ type: 'chunk', text: chunk })}\n\n`);
+    }
+
+    saveSessionTurn(sessionId, videoId, question.trim(), fullAnswer);
+    trackQuestionOutcome(sessionId, videoId, question.trim(), fullAnswer, signals);
+    
+    const isFallback = fullAnswer.includes(FALLBACK_ANSWER);
     const sources = isFallback ? [] : topChunks.map((chunk) => ({
       chunkId: chunk.chunkId,
       start: chunk.start,
@@ -132,7 +146,8 @@ ${webProfile.evidence}`
       score: Number(chunk.score.toFixed(4)),
     }));
 
-    return res.json({ answer, sources });
+    res.write(`data: ${JSON.stringify({ type: 'done', sources })}\n\n`);
+    return res.end();
   } catch (err) {
     const message = err?.message ?? 'Failed to process question.';
     console.error('[ask]', message);

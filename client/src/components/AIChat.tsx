@@ -83,25 +83,6 @@ export function AIChat({
     setError(null);
   }, [videoId, transcriptData.length]);
 
-  const streamAssistantMessage = useCallback((messageId: number, fullText: string, sources: SourceRef[]) => {
-    let cursor = 0;
-    const timer = window.setInterval(() => {
-      cursor += Math.max(1, Math.ceil(fullText.length / 90));
-      const partial = fullText.slice(0, cursor);
-
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === messageId ? { ...msg, text: partial, sources: cursor >= fullText.length ? sources : [] } : msg
-        )
-      );
-
-      if (cursor >= fullText.length) {
-        window.clearInterval(timer);
-        setIsTyping(false);
-      }
-    }, 24);
-  }, []);
-
   const submitQuestion = useCallback(
     async (questionRaw: string) => {
       const question = questionRaw.trim();
@@ -117,33 +98,51 @@ export function AIChat({
       setMessages((prev) => [...prev, newUserMsg]);
       setIsTyping(true);
 
-      try {
-        const data = await aiService.askQuestion(authFetch, {
+      const assistantId = Date.now() + 1;
+      setMessages((prev) => [...prev, { id: assistantId, role: 'ai', text: '' }]);
+
+      let fullText = '';
+      
+      await aiService.askQuestionStream(
+        authFetch,
+        {
           videoId,
           sessionId,
           question,
           transcript: transcriptData,
-        });
-
-        const assistantId = Date.now() + 1;
-        setMessages((prev) => [...prev, { id: assistantId, role: 'ai', text: '' }]);
-        streamAssistantMessage(assistantId, data.answer, data.sources ?? []);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Failed to get AI response.';
-        captureClientException(err, { scope: 'AIChat', videoId, route: '/api/ask' });
-        setError(message);
-        setIsTyping(false);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now() + 1,
-            role: 'ai',
-            text: 'I could not answer that right now. Please try again in a moment.',
-          },
-        ]);
-      }
+        },
+        (chunk) => {
+          fullText += chunk;
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantId ? { ...msg, text: fullText } : msg
+            )
+          );
+        },
+        (sources) => {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantId ? { ...msg, sources } : msg
+            )
+          );
+          setIsTyping(false);
+        },
+        (errMessage) => {
+          captureClientException(new Error(errMessage), { scope: 'AIChat', videoId, route: '/api/ask' });
+          setError(errMessage);
+          setIsTyping(false);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: Date.now() + 2,
+              role: 'ai',
+              text: 'I could not answer that right now. Please try again in a moment.',
+            },
+          ]);
+        }
+      );
     },
-    [videoId, sessionId, transcriptData, isTyping, streamAssistantMessage, authFetch]
+    [videoId, sessionId, transcriptData, isTyping, authFetch]
   );
 
   useEffect(() => {
