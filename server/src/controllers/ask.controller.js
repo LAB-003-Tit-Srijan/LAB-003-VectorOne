@@ -9,6 +9,7 @@ import { cosineSimilarity } from '../utils/vector.js';
 import { isVisualQuestion, hasLexicalOverlap } from '../utils/text.js';
 import { generateGroundedAnswer, generateGroundedAnswerStream, embedText } from '../services/nim-api.service.js';
 import { maybeResolvePersonFromWeb } from '../services/web-profile.service.js';
+import { getModeInstructions } from '../utils/modePromptBuilder.js';
 import { buildOrGetRagIndex, ensureVisualContext } from '../services/rag.service.js';
 import {
   getSessionMemory,
@@ -26,7 +27,8 @@ export async function postAsk(req, res) {
     });
   }
 
-  const { videoId, question, transcript, sessionId } = req.body ?? {};
+  const { videoId, question, transcript, sessionId, mode } = req.body ?? {};
+  const modeInstructions = getModeInstructions(mode);
 
   if (!videoId || typeof videoId !== 'string') {
     return res.status(400).json({ error: 'videoId is required.' });
@@ -91,7 +93,8 @@ export async function postAsk(req, res) {
           topChunks,
           memory,
           learnerInsights,
-          `Video title: ${webProfile.metadata.title}\nChannel: ${webProfile.metadata.channel}\nVideo URL: ${webProfile.metadata.webpageUrl}\nWeb evidence:\n${webProfile.evidence}`
+          `Video title: ${webProfile.metadata.title}\nChannel: ${webProfile.metadata.channel}\nVideo URL: ${webProfile.metadata.webpageUrl}\nWeb evidence:\n${webProfile.evidence}`,
+          modeInstructions
         );
         
         let fullAnswer = '';
@@ -126,7 +129,8 @@ export async function postAsk(req, res) {
       learnerInsights,
       webProfile
         ? `Video title: ${webProfile.metadata.title}\nChannel: ${webProfile.metadata.channel}\nVideo URL: ${webProfile.metadata.webpageUrl}\nWeb evidence:\n${webProfile.evidence}`
-        : ''
+        : '',
+      modeInstructions
     );
 
     let fullAnswer = '';

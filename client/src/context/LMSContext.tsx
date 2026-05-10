@@ -24,7 +24,7 @@ interface LMSContextValue {
   theme: Theme;
   setTheme: React.Dispatch<React.SetStateAction<Theme>>;
   learningMode: string;
-  setLearningMode: React.Dispatch<React.SetStateAction<string>>;
+  setLearningMode: (mode: string) => void;
   aiPreferences: AiPreferences;
   setAiPreferences: React.Dispatch<React.SetStateAction<AiPreferences>>;
   inputUrl: string;
@@ -79,7 +79,15 @@ export function LMSProvider({ children }: { children: ReactNode }) {
     return generated;
   });
 
-  const [learningMode, setLearningMode] = useState('Beginner');
+  const [learningMode, setLearningModeState] = useState(() => {
+    if (typeof window === 'undefined') return 'beginner';
+    return window.localStorage.getItem('lms-learning-mode') || 'beginner';
+  });
+
+  const setLearningMode = useCallback((mode: string) => {
+    setLearningModeState(mode);
+    window.localStorage.setItem('lms-learning-mode', mode);
+  }, []);
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'dark';
     const stored = window.localStorage.getItem('lms-theme');

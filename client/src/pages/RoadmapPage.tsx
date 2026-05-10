@@ -1,141 +1,247 @@
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, CheckCircle2, Circle, Map, Sparkles } from 'lucide-react';
+import { 
+  Map, Sparkles, CheckCircle2, Circle, Lock, 
+  ChevronRight, ArrowRight, Loader2, RefreshCw 
+} from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { useLMS } from '../context/LMSContext';
 
-function formatTime(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
-  return `${m}:${rem.toString().padStart(2, '0')}`;
+interface RoadmapNode {
+  _id: string;
+  title: string;
+  description: string;
+  type: 'concept' | 'practice' | 'advanced';
+  status: 'locked' | 'available' | 'completed';
+  order: number;
+}
+
+interface RoadmapData {
+  nodes: RoadmapNode[];
+  totalNodes: number;
+  completedNodes: number;
 }
 
 export function RoadmapPage() {
-  const { insights, videoId } = useLMS();
+  const { authFetch } = useAuth();
+  const { videoId } = useLMS();
+  const [roadmap, setRoadmap] = useState<RoadmapData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
 
-  const steps: { title: string; detail: string; done: boolean }[] = [];
+  const fetchRoadmap = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/roadmap');
+      if (res.ok) {
+        const data = await res.json();
+        setRoadmap(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch roadmap:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [authFetch]);
 
-  if (!videoId) {
-    steps.push({
-      title: 'Connect a lecture',
-      detail: 'Open Learn and paste a YouTube URL to seed your roadmap.',
-      done: false,
-    });
-  } else if (!insights || insights.summary.totalQuestions < 1) {
-    steps.push({
-      title: 'Calibrate your profile',
-      detail: 'Ask a few grounded questions so we can detect weak topics and replay habits.',
-      done: false,
-    });
-  }
-
-  (insights?.weakTopics ?? []).slice(0, 3).forEach((w) => {
-    steps.push({
-      title: `Stabilize · ${w.topic}`,
-      detail: `Struggle rate ${Math.round(w.struggleRate * 100)}% — add drills and simpler explanations.`,
-      done: w.struggleRate < 0.35,
-    });
-  });
-
-  (insights?.mostAskedConcepts ?? [])
-    .filter((c) => c.struggleRate < 0.42)
-    .slice(0, 2)
-    .forEach((c) => {
-      steps.push({
-        title: `Go deeper · ${c.concept}`,
-        detail: `${c.mentions} asks — stretch into edge cases and interview-style prompts.`,
-        done: c.mentions >= 4,
+  const generateRoadmap = async () => {
+    setGenerating(true);
+    try {
+      const res = await authFetch('/api/roadmap/generate', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId })
       });
-    });
+      if (res.ok) {
+        const data = await res.json();
+        setRoadmap(data);
+      }
+    } catch (err) {
+      alert('Could not generate roadmap. Try studying more topics first.');
+    } finally {
+      setGenerating(false);
+    }
+  };
 
-  const replay = insights?.replayHotspots?.[0];
-  if (replay) {
-    steps.push({
-      title: `Re-watch · ${formatTime(replay.timestamp)}`,
-      detail: `${replay.count} replays — consolidate before moving on.`,
-      done: replay.count < 2,
-    });
+  const completeNode = async (nodeId: string) => {
+    setUpdating(nodeId);
+    try {
+      const res = await authFetch(`/api/roadmap/node/${nodeId}`, { method: 'PATCH' });
+      if (res.ok) {
+        const data = await res.json();
+        setRoadmap(data);
+      }
+    } catch (err) {
+      console.error('Failed to update node:', err);
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  useEffect(() => {
+    fetchRoadmap();
+  }, [fetchRoadmap]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+      </div>
+    );
   }
 
-  if (steps.length === 0) {
-    steps.push({
-      title: 'Keep exploring',
-      detail: 'Your roadmap will refine as you study. Mix recap with “why” questions.',
-      done: false,
-    });
-  }
+  const progress = roadmap ? Math.round((roadmap.completedNodes / roadmap.totalNodes) * 100) : 0;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold font-['Manrope'] tracking-tight flex items-center gap-2">
-          <Map className="w-7 h-7 text-indigo-400" />
-          Learning roadmap
-        </h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-          Personalized progression from weak topics, curiosity patterns, and replay signals.
-        </p>
-      </div>
+    <div className="max-w-4xl mx-auto space-y-10 pb-20">
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-indigo-400 mb-2">
+            <Sparkles className="w-5 h-5" />
+            <span className="text-sm font-bold uppercase tracking-widest">AI Journey Planner</span>
+          </div>
+          <h1 className="text-4xl font-extrabold font-['Manrope'] tracking-tight text-white">
+            Your Learning Roadmap
+          </h1>
+          <p className="text-slate-400 max-w-xl">
+            A dynamic progression path synthesized from your lecture interactions and quiz performance.
+          </p>
+        </div>
 
-      <div
-        className="rounded-3xl border p-6 sm:p-8 relative overflow-hidden"
-        style={{ borderColor: 'var(--surface-border)', background: 'var(--surface-muted)' }}
-      >
-        <div className="absolute inset-0 pointer-events-none opacity-[0.08] bg-[radial-gradient(circle_at_20%_20%,_rgba(99,102,241,0.9),_transparent_50%)]" />
-        <div className="relative space-y-6">
-          {steps.map((step, i) => (
-            <motion.div
-              key={`${step.title}-${i}`}
-              initial={{ opacity: 0, x: -12 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.06 }}
-              className="flex gap-4"
-            >
-              <div className="flex flex-col items-center">
-                <div
-                  className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${
-                    step.done ? 'text-emerald-400 border-emerald-500/40' : 'text-indigo-300 border-indigo-500/30'
-                  }`}
-                  style={{ background: 'var(--surface-card)' }}
-                >
-                  {step.done ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
-                </div>
-                {i < steps.length - 1 && (
-                  <div className="w-px flex-1 min-h-[24px] my-1" style={{ background: 'var(--surface-border)' }} />
-                )}
-              </div>
-              <div className="pb-2 flex-1">
-                <div className="font-semibold">{step.title}</div>
-                <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-                  {step.detail}
-                </p>
-              </div>
-            </motion.div>
-          ))}
+        <button 
+          onClick={generateRoadmap}
+          disabled={generating}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm font-bold hover:bg-white/10 transition-all disabled:opacity-50"
+        >
+          {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          Regenerate Path
+        </button>
+      </header>
+
+      {/* Progress Bar */}
+      <div className="bg-[#1a1b23]/50 border border-indigo-500/10 p-6 rounded-3xl backdrop-blur-xl">
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-sm font-bold text-slate-300">Overall Completion</span>
+          <span className="text-sm font-bold text-indigo-400">{progress}%</span>
+        </div>
+        <div className="h-3 w-full bg-slate-800 rounded-full overflow-hidden">
+          <motion.div 
+            initial={{ width: 0 }}
+            animate={{ width: `${progress}%` }}
+            transition={{ duration: 1, ease: 'easeOut' }}
+            className="h-full bg-gradient-to-r from-indigo-600 to-purple-500 shadow-[0_0_20px_rgba(99,102,241,0.5)]" 
+          />
         </div>
       </div>
 
-      <div
-        className="rounded-2xl border p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
-        style={{ borderColor: 'var(--surface-border)', background: 'var(--surface-card)' }}
-      >
-        <div className="flex items-start gap-3">
-          <Sparkles className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
-          <div>
-            <div className="font-semibold text-sm">Stay in sync</div>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-              The Learn workspace updates this roadmap as you ask questions and seek timestamps.
-            </p>
+      {!roadmap || roadmap.nodes.length === 0 ? (
+        <div className="p-20 rounded-3xl border-2 border-dashed border-slate-800 flex flex-col items-center justify-center text-center">
+          <Map className="w-12 h-12 text-slate-600 mb-4" />
+          <h3 className="text-xl font-bold text-white mb-2">No Roadmap Generated</h3>
+          <p className="text-sm text-slate-500 max-w-sm mb-6">
+            Study some lectures and take a few quizzes to help the AI understand your current level.
+          </p>
+          <button 
+            onClick={generateRoadmap}
+            className="px-6 py-3 rounded-xl premium-button text-white font-bold text-sm"
+          >
+            Generate My First Roadmap
+          </button>
+        </div>
+      ) : (
+        <div className="relative">
+          {/* Vertical line connector */}
+          <div className="absolute left-[27px] top-10 bottom-10 w-0.5 bg-gradient-to-b from-indigo-500/50 via-slate-800 to-slate-800/20" />
+
+          <div className="space-y-8">
+            {roadmap.nodes.sort((a, b) => a.order - b.order).map((node, i) => {
+              const isLocked = node.status === 'locked';
+              const isDone = node.status === 'completed';
+              
+              return (
+                <motion.div 
+                  key={node._id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  className={`relative flex gap-8 group`}
+                >
+                  {/* Timeline Node Icon */}
+                  <div className="relative z-10 shrink-0">
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all duration-300 ${
+                      isDone ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400' :
+                      isLocked ? 'bg-slate-900 border-slate-800 text-slate-600' :
+                      'bg-indigo-500/10 border-indigo-500/40 text-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.2)]'
+                    }`}>
+                      {isDone ? <CheckCircle2 className="w-7 h-7" /> : 
+                       isLocked ? <Lock className="w-6 h-6" /> : 
+                       <Circle className="w-6 h-6 fill-current opacity-20" />}
+                    </div>
+                  </div>
+
+                  {/* Content Card */}
+                  <div className={`flex-1 p-6 rounded-3xl border transition-all duration-300 ${
+                    isLocked ? 'bg-[#1a1b23]/20 border-slate-900/50 grayscale' :
+                    isDone ? 'bg-[#1a1b23]/40 border-emerald-500/10' :
+                    'bg-[#1a1b23]/60 border-indigo-500/30 shadow-[0_10px_30px_rgba(0,0,0,0.2)] hover:border-indigo-500/50'
+                  }`}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${
+                            node.type === 'advanced' ? 'text-purple-400' :
+                            node.type === 'practice' ? 'text-amber-400' :
+                            'text-indigo-400'
+                          }`}>
+                            {node.type}
+                          </span>
+                          {isDone && <span className="text-[10px] font-bold text-emerald-400 uppercase">Completed</span>}
+                        </div>
+                        <h3 className={`text-xl font-bold ${isLocked ? 'text-slate-500' : 'text-white'}`}>
+                          {node.title}
+                        </h3>
+                        <p className={`text-sm leading-relaxed mt-2 ${isLocked ? 'text-slate-600' : 'text-slate-400'}`}>
+                          {node.description}
+                        </p>
+                      </div>
+
+                      {!isDone && !isLocked && (
+                        <button
+                          onClick={() => completeNode(node._id)}
+                          disabled={updating === node._id}
+                          className="shrink-0 p-3 rounded-xl bg-indigo-500 text-white hover:bg-indigo-600 transition-colors shadow-lg shadow-indigo-500/20"
+                        >
+                          {updating === node._id ? <Loader2 className="w-5 h-5 animate-spin" /> : <ChevronRight className="w-5 h-5" />}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
-        <Link
-          to="/learn"
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold premium-button text-white shrink-0"
+      )}
+
+      <footer className="pt-10 flex flex-col sm:flex-row items-center justify-between gap-6 border-t border-slate-800">
+        <div className="flex items-center gap-4">
+          <div className="p-3 rounded-2xl bg-indigo-500/10">
+            <Map className="w-6 h-6 text-indigo-400" />
+          </div>
+          <div>
+            <h4 className="text-white font-bold">Dynamic Pathing</h4>
+            <p className="text-xs text-slate-500">Your roadmap regenerates as you master new topics.</p>
+          </div>
+        </div>
+        
+        <button 
+          onClick={() => window.location.href = '/learn'}
+          className="flex items-center gap-2 text-indigo-400 font-bold hover:text-indigo-300 transition-colors group"
         >
-          Open Learn
-          <ArrowRight className="w-4 h-4" />
-        </Link>
-      </div>
+          Return to Learning Hub
+          <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+        </button>
+      </footer>
     </div>
   );
 }

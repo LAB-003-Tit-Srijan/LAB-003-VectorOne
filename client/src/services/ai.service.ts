@@ -19,6 +19,7 @@ export interface AskRequestPayload {
   sessionId: string;
   question: string;
   transcript: TranscriptItem[];
+  mode?: string;
 }
 
 export interface SmartSummaryPayload {

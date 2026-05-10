@@ -4,6 +4,7 @@ import { normalizeTranscriptUnits } from '../utils/transcript.js';
 import { buildOrGetRagIndex, ensureVisualContext } from '../services/rag.service.js';
 import { reportServerError } from '../middleware/sentry.js';
 import { handleTranscriptGenerated } from './transcriptProcessing.controller.js';
+import { trackLectureAnalyzed } from '../services/globalAnalytics.service.js';
 
 /**
  * GET /api/transcript?videoId=<id_or_url>
@@ -30,6 +31,10 @@ export async function getTranscript(req, res) {
 
     // Automatically trigger the AI processing pipeline (fire and forget)
     handleTranscriptGenerated(videoId, transcript);
+
+    if (req.authUserId) {
+      trackLectureAnalyzed(req.authUserId, videoId).catch(e => console.error('Failed to track global analytics:', e));
+    }
 
     buildOrGetRagIndex(videoId, transcript).catch((error) => {
       console.warn(`[rag] warmup failed for ${videoId}: ${error?.message ?? error}`);
