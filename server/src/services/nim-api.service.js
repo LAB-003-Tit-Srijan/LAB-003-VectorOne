@@ -165,6 +165,7 @@ export async function generateGroundedAnswer(
   memory,
   learnerInsights,
   externalProfileContext = '',
+  modeInstructions = '',
   retryCount = 0
 ) {
   const maxRetries = 2;
@@ -197,6 +198,7 @@ export async function generateGroundedAnswer(
           .join('\n');
 
   const prompt = `You are an AI lecture companion for a single lecture transcript.
+${modeInstructions}
 Strict Rules:
 - Answer using the transcript context provided below.
 - If the context doesn't contain the answer, you can use session memory to clarify or ask for more detail.
@@ -256,7 +258,7 @@ ${context}
     const delay = Math.pow(2, retryCount) * 2000 + Math.random() * 500;
     console.warn(`[chat-api] Rate limited (429). Retrying in ${Math.round(delay)}ms...`);
     await new Promise(resolve => setTimeout(resolve, delay));
-    return generateGroundedAnswer(question, topChunks, memory, learnerInsights, externalProfileContext, retryCount + 1);
+    return generateGroundedAnswer(question, topChunks, memory, learnerInsights, externalProfileContext, modeInstructions, retryCount + 1);
   }
 
   if (!res.ok) {
@@ -279,6 +281,7 @@ export async function* generateGroundedAnswerStream(
   memory,
   learnerInsights,
   externalProfileContext = '',
+  modeInstructions = '',
   retryCount = 0
 ) {
   const maxRetries = 2;
@@ -311,6 +314,7 @@ export async function* generateGroundedAnswerStream(
           .join('\n');
 
   const prompt = `You are an AI lecture companion for a single lecture transcript.
+${modeInstructions}
 Strict Rules:
 - Answer using the transcript context provided below.
 - If the context doesn't contain the answer, you can use session memory to clarify or ask for more detail.
@@ -369,7 +373,7 @@ ${context}
     const delay = Math.pow(2, retryCount) * 2000 + Math.random() * 500;
     console.warn(`[chat-api] Rate limited (429). Retrying in ${Math.round(delay)}ms...`);
     await new Promise(resolve => setTimeout(resolve, delay));
-    yield* generateGroundedAnswerStream(question, topChunks, memory, learnerInsights, externalProfileContext, retryCount + 1);
+    yield* generateGroundedAnswerStream(question, topChunks, memory, learnerInsights, externalProfileContext, modeInstructions, retryCount + 1);
     return;
   }
 

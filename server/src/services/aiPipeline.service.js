@@ -2,6 +2,8 @@ import { NIM_API_KEY, NIM_BASE_URL, GENERATION_MODEL } from '../config/env.js';
 import { parseJsonSafe, extractApiError } from '../utils/http.js';
 import { PipelineResult } from '../models/PipelineResult.model.js';
 import { generateNotesFromTranscript } from './notes.service.js';
+import { generateFlashcardsFromTranscript } from './flashcards.service.js';
+import { generateQuizFromTranscript } from './quiz.service.js';
 
 export async function processTranscriptPipeline(videoId, rawText) {
   try {
@@ -17,21 +19,21 @@ export async function processTranscriptPipeline(videoId, rawText) {
     // Limit text length to avoid token limits for simultaneous large generations
     const text = rawText.length > 9000 ? rawText.slice(0, 9000) : rawText;
 
-    // Run generations in parallel
-    const [studyNotesDoc, flashcards, quizzes, revisionSummaries] = await Promise.all([
+    // Run generations in parallel using specialized services
+    const [studyNotesDoc, flashcardsDoc, quizDoc, revisionSummaries] = await Promise.all([
       generateNotesFromTranscript(videoId, text),
-      runPipelineTask(text, 'flashcards'),
-      runPipelineTask(text, 'quizzes'),
+      generateFlashcardsFromTranscript(videoId, text).catch(e => { console.error('Flashcard pipeline failed:', e); return null; }),
+      generateQuizFromTranscript(videoId, text).catch(e => { console.error('Quiz pipeline failed:', e); return null; }),
       runPipelineTask(text, 'revision_summaries'),
     ]);
 
-    // Save final generated components to MongoDB
+    // Save final generated components summary to the pipeline result model
     await PipelineResult.findOneAndUpdate(
       { videoId },
       { 
         studyNotes: studyNotesDoc ? studyNotesDoc.sections : null, 
-        flashcards, 
-        quizzes, 
+        flashcards: flashcardsDoc ? flashcardsDoc.cards : null, 
+        quizzes: quizDoc ? quizDoc.questions : null, 
         revisionSummaries, 
         status: 'completed',
         updatedAt: new Date()

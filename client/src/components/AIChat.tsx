@@ -2,10 +2,12 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { captureClientException } from '../lib/monitoring';
 import { useAuth } from '../context/AuthContext';
 import { Send, Bot, Sparkles, User, Clock3, AlertCircle } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { TranscriptItem } from './Transcript';
 import { aiService, type SourceRef } from '../services/ai.service';
 import { TimestampChip, formatTime } from './TimestampChip';
+import { ModeSelector, ActiveModeBadge, type LearningMode } from './ModeSelector';
+import { useLMS } from '../context/LMSContext';
 
 const TIMESTAMP_REGEX = /(\b\d{1,2}:\d{2}(?::\d{2})?\b)/;
 
@@ -55,6 +57,7 @@ export function AIChat({
   onConsumePendingQuestion,
 }: AIChatProps) {
   const { authFetch } = useAuth();
+  const { learningMode, setLearningMode } = useLMS();
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -110,6 +113,7 @@ export function AIChat({
           sessionId,
           question,
           transcript: transcriptData,
+          mode: learningMode
         },
         (chunk) => {
           fullText += chunk;
@@ -142,7 +146,7 @@ export function AIChat({
         }
       );
     },
-    [videoId, sessionId, transcriptData, isTyping, authFetch]
+    [videoId, sessionId, transcriptData, isTyping, authFetch, learningMode]
   );
 
   useEffect(() => {
@@ -173,15 +177,27 @@ export function AIChat({
           </div>
           <div>
             <h3 className="font-semibold text-sm">Learning Assistant</h3>
-            <p className="text-[11px] flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Online
+            <p className="text-[11px] flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Online
+              </span>
+              <span className="opacity-20">|</span>
+              <ActiveModeBadge mode={learningMode as LearningMode} />
             </p>
           </div>
         </div>
         <button className="transition-colors" style={{ color: 'var(--text-muted)' }}>
           <Sparkles className="w-5 h-5" />
         </button>
+      </div>
+
+      {/* Mode Selector */}
+      <div className="px-4 py-2 border-b" style={{ borderColor: 'var(--surface-border)', background: 'var(--surface-card)' }}>
+        <ModeSelector 
+          activeMode={learningMode as LearningMode} 
+          onModeChange={(m) => setLearningMode(m)} 
+        />
       </div>
 
       {/* Messages */}
