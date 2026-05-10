@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { captureClientException } from '../lib/monitoring';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -6,6 +6,77 @@ import { BookMarked, Loader2, Sparkles } from 'lucide-react';
 import { useLMS } from '../context/LMSContext';
 import { useAuth } from '../context/AuthContext';
 import { parseJsonBody } from '../lib/apiBase';
+
+function StudyNotes({ videoId }: { videoId: string }) {
+  const { authFetch } = useAuth();
+  const [notes, setNotes] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // We fetch automatically since the pipeline generates it on transcript load
+  const fetchNotes = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await authFetch(`/api/notes/${videoId}`);
+      if (!res.ok) throw new Error('Notes are not ready. The AI pipeline is still processing this lecture.');
+      const data = await res.json();
+      setNotes(data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [videoId, authFetch]);
+
+  // Initial fetch
+  useEffect(() => {
+    fetchNotes();
+  }, [fetchNotes]);
+
+  if (loading) return <div className="text-sm p-4 flex items-center gap-2" style={{ color: 'var(--text-muted)' }}><Loader2 className="w-4 h-4 animate-spin"/> Fetching notes from AI pipeline...</div>;
+  if (error) return (
+    <div className="text-sm p-4 border border-rose-500/20 bg-rose-500/5 rounded-xl text-rose-300">
+      <div className="mb-3">{error}</div>
+      <button onClick={fetchNotes} className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 rounded-lg transition-colors">Refresh Status</button>
+    </div>
+  );
+  if (!notes || !notes.sections) return <div className="text-sm p-4">No notes generated.</div>;
+
+  return (
+    <div className="space-y-4">
+      {notes.sections.map((section: any, idx: number) => (
+        <details key={idx} className="group bg-indigo-500/5 border border-indigo-500/20 rounded-2xl overflow-hidden" open={idx === 0}>
+          <summary className="cursor-pointer p-4 font-semibold text-sm flex justify-between items-center bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors">
+            {section.title}
+            <span className="text-indigo-400 group-open:rotate-180 transition-transform">▼</span>
+          </summary>
+          <div className="p-4 space-y-4 text-sm" style={{ color: 'var(--text-main)' }}>
+            {section.content && <div className="whitespace-pre-wrap leading-relaxed">{section.content}</div>}
+            
+            {section.keyConcepts && section.keyConcepts.length > 0 && (
+              <div className="bg-indigo-500/5 p-3.5 rounded-xl border border-indigo-500/10">
+                <h4 className="text-[11px] font-bold text-indigo-400 mb-2 uppercase tracking-wider">Key Concepts</h4>
+                <ul className="list-disc pl-4 space-y-1.5 opacity-90">
+                  {section.keyConcepts.map((c: string, i: number) => <li key={i}>{c}</li>)}
+                </ul>
+              </div>
+            )}
+            
+            {section.formulas && section.formulas.length > 0 && (
+              <div className="bg-rose-500/10 p-3.5 rounded-xl border border-rose-500/20">
+                <h4 className="text-[11px] font-bold text-rose-300 mb-2 uppercase tracking-wider">Formulas / Rules</h4>
+                <ul className="list-disc pl-4 space-y-1.5 text-rose-200">
+                  {section.formulas.map((f: string, i: number) => <li key={i} className="font-mono text-[13px]">{f}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
 
 type Tab = 'summaries' | 'notes' | 'flashcards' | 'quizzes';
 
@@ -144,29 +215,35 @@ export function RevisionPage() {
               {tabCopy[tab].description}
             </div>
           </div>
-          <motion.button
-            type="button"
-            whileTap={{ scale: 0.98 }}
-            disabled={loading || !videoId || transcriptData.length === 0}
-            onClick={() => void generate()}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold premium-button text-white disabled:opacity-45"
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            Generate
-          </motion.button>
+          {tab !== 'notes' && (
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.98 }}
+              disabled={loading || !videoId || transcriptData.length === 0}
+              onClick={() => void generate()}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold premium-button text-white disabled:opacity-45"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              Generate
+            </motion.button>
+          )}
         </div>
         <div className="p-4 sm:p-6 flex-1 overflow-y-auto custom-scrollbar max-h-[560px]">
-          {error && (
+          {error && tab !== 'notes' && (
             <div className="mb-4 text-sm text-rose-300 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2">
               {error}
             </div>
           )}
-          <pre
-            className="whitespace-pre-wrap text-sm font-sans leading-relaxed"
-            style={{ color: 'var(--text-main)' }}
-          >
-            {content[tab] || (loading ? '' : 'Press Generate to create revision content for this tab.')}
-          </pre>
+          {tab === 'notes' ? (
+            <StudyNotes videoId={videoId} />
+          ) : (
+            <pre
+              className="whitespace-pre-wrap text-sm font-sans leading-relaxed"
+              style={{ color: 'var(--text-main)' }}
+            >
+              {content[tab] || (loading ? '' : 'Press Generate to create revision content for this tab.')}
+            </pre>
+          )}
         </div>
       </div>
     </div>
