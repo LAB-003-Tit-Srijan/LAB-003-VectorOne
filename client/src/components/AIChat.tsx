@@ -5,6 +5,24 @@ import { Send, Bot, Sparkles, User, Clock3, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { TranscriptItem } from './Transcript';
 import { aiService, type SourceRef } from '../services/ai.service';
+import { TimestampChip, formatTime } from './TimestampChip';
+
+const TIMESTAMP_REGEX = /(\b\d{1,2}:\d{2}(?::\d{2})?\b)/;
+
+function formatMessageWithTimestamps(text: string) {
+  if (!text) return null;
+  const parts = text.split(TIMESTAMP_REGEX);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (i % 2 === 1) {
+          return <TimestampChip key={i} timeString={part} />;
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
 
 interface ChatMessage {
   id: number;
@@ -27,13 +45,6 @@ const INITIAL_MESSAGE: ChatMessage = {
   role: 'ai',
   text: 'Ask me anything about this lecture. I only answer from the loaded transcript and will cite timestamps.',
 };
-
-function formatTime(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
-  return `${m}:${rem.toString().padStart(2, '0')}`;
-}
 
 export function AIChat({
   videoId,
@@ -191,27 +202,17 @@ export function AIChat({
             </div>
             <motion.div
               whileHover={{ y: -1 }}
-              className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
+              className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm shadow-sm leading-relaxed ${
               msg.role === 'user' 
                 ? 'bg-gradient-to-br from-slate-700 to-slate-800 text-white rounded-tr-sm border border-slate-600/50' 
                 : 'bg-indigo-500/10 border border-indigo-500/20 text-slate-100 rounded-tl-sm'
             }`}
             >
-              {msg.text}
+              {msg.role === 'user' ? msg.text : formatMessageWithTimestamps(msg.text)}
               {msg.role === 'ai' && (msg.sources?.length ?? 0) > 0 && (
                 <div className="mt-3 pt-2 border-t border-indigo-500/20 flex flex-wrap gap-2">
                   {msg.sources?.slice(0, 4).map((source) => (
-                    <motion.button
-                      whileHover={{ scale: 1.03 }}
-                      whileTap={{ scale: 0.97 }}
-                      key={`${msg.id}-${source.chunkId}`}
-                      onClick={() => onSeek(source.start)}
-                      className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-lg bg-slate-900/60 hover:bg-slate-800/70 border border-slate-700/70 text-indigo-300 transition-colors"
-                      title={`Jump to ${formatTime(source.start)}`}
-                    >
-                      <Clock3 className="w-3 h-3" />
-                      {formatTime(source.start)}
-                    </motion.button>
+                    <TimestampChip key={`${msg.id}-${source.chunkId}`} seconds={source.start} />
                   ))}
                 </div>
               )}

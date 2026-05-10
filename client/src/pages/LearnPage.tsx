@@ -7,6 +7,7 @@ import { AIChat } from '../components/AIChat';
 import { Transcript } from '../components/Transcript';
 import { SmartSummaries } from '../components/SmartSummaries';
 import { useLMS } from '../context/LMSContext';
+import { VideoPlayerProvider } from '../context/VideoPlayerContext';
 
 export function LearnPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -65,8 +66,9 @@ export function LearnPage() {
   );
 
   return (
-    <div className="max-w-[1400px] mx-auto space-y-5 -mt-2">
-      <motion.div
+    <VideoPlayerProvider seekTo={handleSeek} currentTime={currentTime}>
+      <div className="max-w-[1400px] mx-auto space-y-5 -mt-2">
+        <motion.div
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
@@ -132,5 +134,6 @@ export function LearnPage() {
         </div>
       </div>
     </div>
+    </VideoPlayerProvider>
   );
 }
