@@ -3,6 +3,7 @@ import { extractVideoId } from '../utils/youtube.js';
 import { normalizeTranscriptUnits } from '../utils/transcript.js';
 import { buildOrGetRagIndex, ensureVisualContext } from '../services/rag.service.js';
 import { reportServerError } from '../middleware/sentry.js';
+import { handleTranscriptGenerated } from './transcriptProcessing.controller.js';
 
 /**
  * GET /api/transcript?videoId=<id_or_url>
@@ -26,6 +27,10 @@ export async function getTranscript(req, res) {
     const rawTranscript = await YoutubeTranscript.fetchTranscript(videoId);
 
     const transcript = normalizeTranscriptUnits(rawTranscript);
+
+    // Automatically trigger the AI processing pipeline (fire and forget)
+    handleTranscriptGenerated(videoId, transcript);
+
     buildOrGetRagIndex(videoId, transcript).catch((error) => {
       console.warn(`[rag] warmup failed for ${videoId}: ${error?.message ?? error}`);
     });
