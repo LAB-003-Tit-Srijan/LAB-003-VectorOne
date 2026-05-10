@@ -14,6 +14,7 @@ import { readRecentLectures, recordRecentLecture, type RecentLecture } from '../
 import type { InsightsResponse, TimelineItem } from '../types/insights';
 import { DEFAULT_AI_PREFERENCES, type AiPreferences } from '../types/lms';
 import { captureClientException } from '../lib/monitoring';
+import { parseJsonBody } from '../lib/apiBase';
 import { useAuth } from './AuthContext';
 
 type Theme = 'light' | 'dark';
@@ -120,7 +121,7 @@ export function LMSProvider({ children }: { children: ReactNode }) {
 
     try {
       const res = await authFetch(`/api/transcript?videoId=${encodeURIComponent(vid)}`);
-      const data = await res.json();
+      const data = await parseJsonBody<{ transcript?: unknown; error?: string }>(res);
 
       if (!res.ok) {
         throw new Error(data.error ?? `Server error ${res.status}`);

@@ -4,24 +4,13 @@ import { useAuth } from '../context/AuthContext';
 import { Send, Bot, Sparkles, User, Clock3, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { TranscriptItem } from './Transcript';
-
-interface SourceRef {
-  chunkId: string;
-  start: number;
-  end: number;
-  score: number;
-}
+import { aiService, type SourceRef } from '../services/ai.service';
 
 interface ChatMessage {
   id: number;
   role: 'user' | 'ai';
   text: string;
   sources?: SourceRef[];
-}
-
-interface AskResponse {
-  answer: string;
-  sources: SourceRef[];
 }
 
 interface AIChatProps {
@@ -118,21 +107,12 @@ export function AIChat({
       setIsTyping(true);
 
       try {
-        const res = await authFetch('/api/ask', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            videoId,
-            sessionId,
-            question,
-            transcript: transcriptData,
-          }),
+        const data = await aiService.askQuestion(authFetch, {
+          videoId,
+          sessionId,
+          question,
+          transcript: transcriptData,
         });
-
-        const data = (await res.json()) as AskResponse & { error?: string };
-        if (!res.ok) {
-          throw new Error(data.error ?? `Server error ${res.status}`);
-        }
 
         const assistantId = Date.now() + 1;
         setMessages((prev) => [...prev, { id: assistantId, role: 'ai', text: '' }]);

@@ -19,8 +19,19 @@ export const EMBEDDING_FALLBACK_MODELS = (
   .filter(Boolean);
 export const GENERATION_MODEL =
   process.env.NIM_GENERATION_MODEL ?? 'meta/llama-3.1-70b-instruct';
+
+/** POST /api/chat — NIM chat model (OpenAI-compatible). Defaults to GENERATION_MODEL / NIM_GENERATION_MODEL. */
+export const NIM_CHAT_MODEL = (process.env.NIM_CHAT_MODEL ?? GENERATION_MODEL).trim();
+
+/** POST /api/chat — nim | gemini | auto (auto prefers NIM when NIM_API_KEY is set). */
+export const TRANSCRIPT_CHAT_PROVIDER = (
+  process.env.TRANSCRIPT_CHAT_PROVIDER ?? 'auto'
+)
+  .trim()
+  .toLowerCase();
+
 export const FALLBACK_ANSWER = 'This topic is not covered in the lecture.';
-export const RETRIEVAL_TOP_K = 12;
+export const RETRIEVAL_TOP_K = 15;
 export const MIN_RELEVANCE_SCORE = 0.05;
 export const MAX_MEMORY_TURNS = 8;
 export const ENABLE_VISUAL_CONTEXT = process.env.ENABLE_VISUAL_CONTEXT !== 'false';
@@ -46,9 +57,19 @@ export const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID ?? '').trim();
 /** Google Gemini (summarize / auxiliary AI). Prefer GEMINI_API_KEY or legacy GOOGLE_API_KEY */
 export const GEMINI_API_KEY =
   (process.env.GEMINI_API_KEY ?? process.env.GOOGLE_AI_API_KEY ?? '').trim();
-/** Model ID e.g. gemini-1.5-flash, gemini-1.5-flash-latest */
-export const GEMINI_MODEL = (process.env.GEMINI_MODEL ?? 'gemini-1.5-flash').trim();
+/** Model ID for Google AI Studio / generativelanguage API (e.g. gemini-2.0-flash, gemini-2.5-flash). */
+export const GEMINI_MODEL = (process.env.GEMINI_MODEL ?? 'gemini-2.0-flash').trim();
 /** Max characters accepted for POST /api/ai/summarize body.text */
 export const GEMINI_SUMMARIZE_MAX_INPUT_CHARS = Number(
   process.env.GEMINI_SUMMARIZE_MAX_INPUT_CHARS ?? 120_000
+);
+
+/** POST /api/chat — max question length */
+export const GEMINI_CHAT_MAX_QUESTION_CHARS = Number(
+  process.env.GEMINI_CHAT_MAX_QUESTION_CHARS ?? 4000
+);
+
+/** POST /api/chat — max transcript context characters after formatting */
+export const GEMINI_CHAT_MAX_TRANSCRIPT_CHARS = Number(
+  process.env.GEMINI_CHAT_MAX_TRANSCRIPT_CHARS ?? 100_000
 );

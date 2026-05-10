@@ -11,7 +11,8 @@ import { embeddingStrategyCache } from '../models/stores.js';
 import { parseJsonSafe, extractApiError } from '../utils/http.js';
 import { formatTimestamp } from '../utils/time.js';
 
-export async function requestEmbedding(model, payload) {
+export async function requestEmbedding(model, payload, retryCount = 0) {
+  const maxRetries = 4;
   const res = await fetch(`${NIM_BASE_URL}/embeddings`, {
     method: 'POST',
     headers: {
@@ -25,6 +26,14 @@ export async function requestEmbedding(model, payload) {
   });
 
   const data = await parseJsonSafe(res);
+
+  if (res.status === 429 && retryCount < maxRetries) {
+    const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 500;
+    console.warn(`[embedding-api] Rate limited (429). Retrying in ${Math.round(delay)}ms (Attempt ${retryCount + 1}/${maxRetries})...`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return requestEmbedding(model, payload, retryCount + 1);
+  }
+
   if (!res.ok) {
     const reason = extractApiError(data, 'NIM embedding request failed.');
     throw new Error(`[model=${model}] (${res.status}) ${reason}`);
@@ -34,37 +43,41 @@ export async function requestEmbedding(model, payload) {
   console.log(`[embedding-api] Model: ${model}, Response keys: ${Object.keys(data).join(', ')}`);
   if (data?.data) console.log(`[embedding-api] data.length: ${data.data.length}`);
 
-  const vector = data?.data?.[0]?.embedding;
-  if (!Array.isArray(vector) || vector.length === 0) {
+  const results = data?.data;
+  if (!Array.isArray(results) || results.length === 0) {
     console.error(`[embedding-api] Invalid structure:`, JSON.stringify(data).slice(0, 500));
-    throw new Error(`[model=${model}] Embedding API returned an empty or invalid vector.`);
+    throw new Error(`[model=${model}] Embedding API returned an empty or invalid response.`);
   }
-  console.log(`[embedding-api] Successfully retrieved vector of length ${vector.length}`);
-  return vector;
+
+  // Handle single or multiple inputs
+  if (Array.isArray(payload.input)) {
+    return results.map(item => item.embedding);
+  }
+  return results[0]?.embedding;
 }
 
 export async function embedText(text, inputType) {
+  const results = await embedTextBatch([text], inputType);
+  return results[0];
+}
+
+export async function embedTextBatch(texts, inputType) {
+  if (!Array.isArray(texts) || texts.length === 0) return [];
+
   const models = [EMBEDDING_MODEL, ...EMBEDDING_FALLBACK_MODELS].filter(
     (model, idx, arr) => arr.indexOf(model) === idx
   );
-  const payloadVariants = [
-    { input: [text], input_type: inputType, encoding_format: 'float' },
-    { input: [text], encoding_format: 'float' },
-    { input: text, encoding_format: 'float' },
-  ];
 
   const strategyKey = `inputType:${inputType}`;
   const cached = embeddingStrategyCache.get(strategyKey);
+
   if (cached) {
     try {
-      // Reconstruct payload with NEW text but SAME structure that worked before
-      const variant = payloadVariants[cached.variantIndex];
-      const payload = { ...variant };
-      if (Array.isArray(variant.input)) {
-        payload.input = [text];
-      } else {
-        payload.input = text;
-      }
+      const payload = { 
+        input: texts, 
+        encoding_format: 'float',
+        ...(inputType ? { input_type: inputType } : {})
+      };
       return await requestEmbedding(cached.model, payload);
     } catch {
       embeddingStrategyCache.delete(strategyKey);
@@ -72,25 +85,29 @@ export async function embedText(text, inputType) {
   }
 
   const errors = [];
+  const payloadVariants = [
+    { input: texts, input_type: inputType, encoding_format: 'float' },
+    { input: texts, encoding_format: 'float' },
+  ];
+
   for (const model of models) {
     for (let idx = 0; idx < payloadVariants.length; idx += 1) {
       const payload = payloadVariants[idx];
       try {
-        const vector = await requestEmbedding(model, payload);
-        // Cache the model and which variant index worked, NOT the payload itself
+        const result = await requestEmbedding(model, payload);
         embeddingStrategyCache.set(strategyKey, { model, variantIndex: idx });
-        return vector;
+        return result;
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        errors.push(message);
+        errors.push(err instanceof Error ? err.message : String(err));
       }
     }
   }
 
-  throw new Error(`NIM embedding request failed. Attempts: ${errors.join(' | ')}`);
+  throw new Error(`NIM batch embedding failed. Attempts: ${errors.join(' | ')}`);
 }
 
-export async function describeFrameWithVision(videoId, frame) {
+export async function describeFrameWithVision(videoId, frame, retryCount = 0) {
+  const maxRetries = 3;
   const prompt =
     `Describe only what is visibly shown in this lecture frame. ` +
     `Focus on diagrams, code, formulas, slides, and labels. Keep it under 40 words.`;
@@ -119,6 +136,14 @@ export async function describeFrameWithVision(videoId, frame) {
   });
 
   const data = await parseJsonSafe(res);
+
+  if (res.status === 429 && retryCount < maxRetries) {
+    const delay = Math.pow(2, retryCount) * 1500 + Math.random() * 500;
+    console.warn(`[vision-api] Rate limited (429). Retrying in ${Math.round(delay)}ms...`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return describeFrameWithVision(videoId, frame, retryCount + 1);
+  }
+
   if (!res.ok) {
     const reason = extractApiError(data, 'NIM vision request failed.');
     throw new Error(`NIM vision request failed (${res.status}): ${reason}`);
@@ -139,14 +164,27 @@ export async function generateGroundedAnswer(
   topChunks,
   memory,
   learnerInsights,
-  externalProfileContext = ''
+  externalProfileContext = '',
+  retryCount = 0
 ) {
-  const context = topChunks
-    .map(
-      (chunk, idx) =>
-        `[${idx + 1}] (${chunk.sourceType ?? 'transcript'}) ${chunk.start.toFixed(2)}s-${chunk.end.toFixed(2)}s\n${chunk.text}`
-    )
-    .join('\n\n');
+  const maxRetries = 2;
+  const MAX_CONTEXT_CHARS = 10000; // Proxy for token limit (approx 2500-3000 tokens)
+  let context = '';
+  let activeChunks = [...topChunks];
+
+  while (activeChunks.length > 0) {
+    context = activeChunks
+      .map(
+        (chunk, idx) =>
+          `[${idx + 1}] (${chunk.sourceType ?? 'transcript'}) ${chunk.start.toFixed(2)}s-${chunk.end.toFixed(2)}s\n${chunk.text}`
+      )
+      .join('\n\n');
+
+    if (context.length <= MAX_CONTEXT_CHARS || activeChunks.length === 1) {
+      break;
+    }
+    activeChunks.pop(); // Remove the least relevant chunk
+  }
 
   const historyBlock =
     memory.history.length === 0
@@ -160,17 +198,16 @@ export async function generateGroundedAnswer(
 
   const prompt = `You are an AI lecture companion for a single lecture transcript.
 Strict Rules:
-- Answer ONLY using the transcript context provided below.
-- Do NOT use external knowledge, assumptions, or generic explanations.
-- If the answer is missing or unclear in context, respond exactly: "${FALLBACK_ANSWER}"
-- Reject unrelated/general questions by responding exactly: "${FALLBACK_ANSWER}"
+- Answer using the transcript context provided below.
+- If the context doesn't contain the answer, you can use session memory to clarify or ask for more detail.
+- If the answer is completely missing and unrelated to the lecture, respond with: "${FALLBACK_ANSWER}"
+- You can respond to greetings (like "hi" or "hello") naturally before addressing the lecture content.
 - Keep the answer concise and instructional.
 - When possible, include lecture timestamps from context in the answer (example: "around 12:43").
 - Use recent session memory to personalize guidance and acknowledge learning struggles when relevant.
-- If this appears repeated/confusing, briefly acknowledge it (example: "You previously asked about recursion.").
 - Use visual context lines when the user asks about diagrams, on-screen text, or what is shown.
-- For person-identity questions, you may use "External profile context" if provided.
-- If no relevant evidence exists, respond exactly: "${FALLBACK_ANSWER}".
+- For person-identity questions, use the "External profile context" if provided.
+- If the user asks for a summary, provide a brief overview based on the provided chunks, noting that it is a partial summary.
 
 Question:
 ${question}
@@ -214,6 +251,14 @@ ${context}
   });
 
   const data = await parseJsonSafe(res);
+
+  if (res.status === 429 && retryCount < maxRetries) {
+    const delay = Math.pow(2, retryCount) * 2000 + Math.random() * 500;
+    console.warn(`[chat-api] Rate limited (429). Retrying in ${Math.round(delay)}ms...`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return generateGroundedAnswer(question, topChunks, memory, learnerInsights, externalProfileContext, retryCount + 1);
+  }
+
   if (!res.ok) {
     const reason = extractApiError(data, 'NIM chat request failed.');
     throw new Error(`NIM chat request failed (${res.status}): ${reason}`);

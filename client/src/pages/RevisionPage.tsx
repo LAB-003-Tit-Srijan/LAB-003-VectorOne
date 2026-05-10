@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { BookMarked, Loader2, Sparkles } from 'lucide-react';
 import { useLMS } from '../context/LMSContext';
 import { useAuth } from '../context/AuthContext';
+import { parseJsonBody } from '../lib/apiBase';
 
 type Tab = 'summaries' | 'notes' | 'flashcards' | 'quizzes';
 
@@ -65,7 +66,7 @@ export function RevisionPage() {
           transcript: transcriptData,
         }),
       });
-      const data = (await res.json()) as { answer?: string; error?: string };
+      const data = await parseJsonBody<{ answer?: string; error?: string }>(res);
       if (!res.ok) throw new Error(data.error ?? `Error ${res.status}`);
       const text = data.answer ?? '';
       let shown = '';

@@ -124,7 +124,8 @@ ${webProfile.evidence}`
     );
     saveSessionTurn(sessionId, videoId, question.trim(), answer);
     trackQuestionOutcome(sessionId, videoId, question.trim(), answer, signals);
-    const sources = topChunks.map((chunk) => ({
+    const isFallback = answer.includes(FALLBACK_ANSWER);
+    const sources = isFallback ? [] : topChunks.map((chunk) => ({
       chunkId: chunk.chunkId,
       start: chunk.start,
       end: chunk.end,
